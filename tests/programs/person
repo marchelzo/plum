@@ -1,0 +1,18 @@
+let Person = function (name) {
+        let p = {};
+
+        p.getName = function (self) {
+                return self.name;
+        };
+        p.setName = function (self, newName) {
+                self.name = newName;
+        };
+        p.name = name;
+
+        return p;
+};
+
+let p = Person('Alice');
+print(p.getName());
+p.setName('Bob');
+print(p.getName());

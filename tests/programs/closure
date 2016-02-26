@@ -1,0 +1,13 @@
+let makeCounter = function () {
+        let c = 1;
+        return function () {
+                let oldc = c;
+                c = 42;
+                return oldc;
+        };
+};
+
+let counter = makeCounter();
+
+let result = counter();
+result = counter();

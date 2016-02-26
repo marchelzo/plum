@@ -1,0 +1,5 @@
+let dec = function (k) {
+        return k - 1;
+};
+
+print(dec(4));

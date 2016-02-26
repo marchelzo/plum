@@ -2,7 +2,7 @@
 
 test_functions()
 {
-        grep '^TEST(' src/*.c | grep -v '// OFF' | awk '{ print $1 }' | tr ':' $'\t' | sed -e 's#src/\([^ ]*\)\.c#\1#' -e 's/TEST(\([^ )]*\))/\1/'
+        grep '^TEST(' src/*.c | grep -v '// OFF' | grep "$1" | awk '{ print $1 }' | tr ':' $'\t' | sed -e 's#src/\([^ ]*\)\.c#\1#' -e 's/TEST(\([^ )]*\))/\1/'
 }
 
 cat > test.c <<EOF
@@ -11,8 +11,7 @@ cat > test.c <<EOF
 
 EOF
 
-
-mapfile -t funcs < <(test_functions)
+mapfile -t funcs < <(test_functions "$1")
 
 for func in "${funcs[@]}"; do
         read -r file testname <<< "$func"

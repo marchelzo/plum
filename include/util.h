@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdbool.h>
 
 #define writeint(mem, val) \
         (memcpy(mem, &(int){val}, sizeof (int)), \
@@ -26,5 +28,11 @@ min(intmax_t a, intmax_t b);
 
 char *
 sclone(char const *s);
+
+bool
+contains(char const *s, char c);
+
+char *slurp(char const *path);
+
 
 #endif

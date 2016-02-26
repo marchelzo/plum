@@ -14,8 +14,8 @@
         ((v).items + idx)
 
 #define vec_push(v, item) \
-          (((v).count == (v).capacity) \
-        ? ((resize((v).items, ((v).capacity = (v).capacity == 0 ? 4 : ((v).capacity * 2)) * (sizeof (*(v).items)))), \
+          (((v).count >= (v).capacity) \
+        ? ((resize((v).items, ((v).capacity = ((v).capacity == 0 ? 4 : ((v).capacity * 2))) * (sizeof (*(v).items)))), \
                         ((v).items[(v).count++] = (item)), \
                         ((v).items + (v).count - 1)) \
         : (((v).items[(v).count++] = (item)), \
@@ -25,7 +25,7 @@
     ((v).count == 0 ? NULL : (v).items + --(v).count)
 
 #define vec_init(v) \
-    ((v.capacity = 0), (v.count = 0), (v.items = NULL))
+    (((v).capacity = 0), ((v).count = 0), ((v).items = NULL))
 
 #define vec_empty(v) \
     ((v.capacity = 0), (v.count = 0), free(v.items), (v.items = NULL))

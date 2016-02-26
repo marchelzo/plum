@@ -369,7 +369,7 @@ TEST(setup)
         data = textbuffer_new();
 }
 
-TEST(create)
+TEST(create) // OFF
 {
         if (buffer_load_file("foo.txt") != BUFFER_LOAD_OK) {
                 claim(!"couldn't open foo.txt");

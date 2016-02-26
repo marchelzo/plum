@@ -1,0 +1,11 @@
+let factorial = function (k) {
+        if (k == 0) {
+                return 1;
+        } else {
+                return k * factorial(k - 1);
+        }
+};
+
+print(factorial(10));
+
+let result = 42;

@@ -6,6 +6,9 @@ CFLAGS += -Iinclude
 CFLAGS += -g3
 CFLAGS += -ltickit
 CFLAGS += -lncurses
+CFLAGS += -Wno-switch
+
+TEST_FILTER ?= "."
 
 ifndef RELEASE
         CFLAGS += -fsanitize=undefined
@@ -19,17 +22,26 @@ endif
 SOURCES := $(wildcard src/*.c)
 OBJECTS := $(patsubst %.c,%.o,$(SOURCES))
 
+all: plum interpreter repl test
+
 plum: $(OBJECTS) plum.c
+	$(CC) $(CFLAGS) -o $@ $^
+
+interpreter: $(OBJECTS) interpreter.c
+	$(CC) $(CFLAGS) -o $@ $^
+
+repl: $(OBJECTS) repl.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ -DFILENAME=$(patsubst src/%.c,%,$<) $<
+
 clean:
 	rm -rf src/*.o
 
 .PHONY: test.c
 test.c: $(OBJECTS)
-	./test.sh
+	./test.sh $(TEST_FILTER)
 
 .PHONY: test
 test: $(OBJECTS) test.c
