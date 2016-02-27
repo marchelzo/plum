@@ -46,7 +46,7 @@ value_hash(struct value const *val);
 bool
 value_test_equality(struct value const *v1, struct value const *v2);
 
-char const *
+char *
 value_show(struct value const *v);
 
 #endif

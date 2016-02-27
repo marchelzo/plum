@@ -621,7 +621,9 @@ execute_for_loop(struct environment *env, struct statement const *s)
         execute(loop_env, s->for_loop.init);
         
         for (;;) {
-                struct value v = eval(loop_env, s->for_loop.cond);
+                struct value v = s->for_loop.cond != NULL
+                               ? eval(loop_env, s->for_loop.cond)
+                               : (struct value) { .type = VALUE_BOOLEAN, .boolean = true };
                 if (v.type != VALUE_BOOLEAN) {
                         eval_panic("attempt to use a non-boolean as the condition in a for loop");
                 }
@@ -666,7 +668,8 @@ eval(struct environment *env, struct expression const *e)
         case EXPRESSION_METHOD_CALL:   return eval_method_call(env, e);
         case EXPRESSION_MEMBER_ACCESS: return eval_member_access(env, e);
         case EXPRESSION_SUBSCRIPT:     return eval_subscript(env, e);
-        case EXPRESSION_BINOP:         return eval_binop(env, e);
+        case EXPRESSION_BINOP:         return e->binop(env, e->left, e->right);
+        case EXPRESSION_UNOP:          return e->unop(env, e->operand);
         case EXPRESSION_NIL:           return nil;
         default:                       break;
         }

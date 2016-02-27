@@ -127,7 +127,7 @@ struct expression {
                         struct expression *subscript;
                 };
                 struct {
-                        struct expression *(*unop)(struct expression *);
+                        struct value (*unop)(struct environment *, struct expression const *);
                         struct expression *operand;
                 };
                 struct {

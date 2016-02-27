@@ -39,4 +39,7 @@ binary_operator_less_than_or_equal(struct environment *env, struct expression co
 struct value
 binary_operator_greater_than_or_equal(struct environment *env, struct expression const *left, struct expression const *right);
 
+struct value
+unary_operator_negation(struct environment *env, struct expression const *operand);
+
 #endif

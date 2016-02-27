@@ -169,7 +169,44 @@ value_hash(struct value const *val)
         assert(false);
 }
 
-char const *
+char *
+show_array(struct value const *a)
+{
+        size_t capacity = 1;
+        size_t len = 1;
+        size_t n;
+        char *s = alloc(2);
+        strcpy(s, "[");
+
+#define add(str) \
+                n = strlen(str); \
+                if (len + n >= capacity) {\
+                        capacity = 2 * (len + n) + 1; \
+                        resize(s, capacity); \
+                } \
+                strcpy(s + len, str); \
+                len += n;
+
+        if (a->array->count >= 1) {
+                char *val = value_show(&a->array->items[0]);
+                add(val);
+                free(val);
+        }
+
+        for (size_t i = 1; i < a->array->count; ++i) {
+                char *val = value_show(&a->array->items[i]);
+                add(", ");
+                add(val);
+                free(val);
+        }
+
+        add("]");
+#undef add
+
+        return s;
+}
+
+char *
 value_show(struct value const *v)
 {
         static char buffer[1024];
@@ -189,6 +226,9 @@ value_show(struct value const *v)
                 break;
         case VALUE_NIL:
                 snprintf(buffer, 1024, "%s", "nil");
+                break;
+        case VALUE_ARRAY:
+                return show_array(v);
         default:
                 // TODO: finish
                 break;

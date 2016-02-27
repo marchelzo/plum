@@ -29,6 +29,11 @@ struct binop {
         int prec;
 };
 
+struct unop {
+        struct value (*function)(struct environment *, struct expression const *);
+        char const *op;
+};
+
 static struct binop binary_operators[] = {
         { .prec = 3, .function = binary_operator_addition,              .op = "+"  },
         { .prec = 3, .function = binary_operator_subtraction,           .op = "-"  },
@@ -42,6 +47,10 @@ static struct binop binary_operators[] = {
         { .prec = 2, .function = binary_operator_greater_than,          .op = ">"  },
         { .prec = 2, .function = binary_operator_less_than_or_equal,    .op = "<=" },
         { .prec = 2, .function = binary_operator_greater_than_or_equal, .op = ">=" },
+};
+
+static struct unop unary_operators[] = {
+        { .function = unary_operator_negation, .op = "!" },
 };
 
 static jmp_buf jb;
@@ -109,6 +118,21 @@ consume_keyword(int type)
         expect_keyword(type);
         token += 1;
 
+}
+
+static struct unop
+get_unary_operator(char const *op)
+{
+        size_t n_unops = sizeof unary_operators / sizeof unary_operators[0];
+
+        for (size_t i = 0; i < n_unops; ++i) {
+                struct unop o = unary_operators[i];
+                if (strcmp(op, o.op) == 0) {
+                        return o;
+                }
+        }
+
+        error("invalid unary operator: %s", op);
 }
 
 static struct binop
@@ -260,6 +284,23 @@ prefix_nil(void)
 
         struct expression *e = alloc(sizeof *e);
         e->type = EXPRESSION_NIL;
+
+        return e;
+}
+
+static struct expression *
+prefix_operator(void)
+{
+        expect(TOKEN_OPERATOR);
+        struct unop op = get_unary_operator(token->operator);
+        consume(TOKEN_OPERATOR);
+
+        struct expression *operand = parse_expr();
+        struct expression *e = alloc(sizeof *e);
+
+        e->type = EXPRESSION_UNOP;
+        e->operand = operand;
+        e->unop = op.function;
 
         return e;
 }
@@ -430,6 +471,7 @@ static parse_fn *
 get_prefix_parser(void)
 {
         switch (token->type) {
+        case TOKEN_OPERATOR:   return prefix_operator;
         case TOKEN_INTEGER:    return prefix_integer;
         case TOKEN_REAL:       return prefix_real;
         case TOKEN_STRING:     return prefix_string;
@@ -452,7 +494,7 @@ keyword:
         }
 
 error:
-        error("expected statement but found %s", token_show(token));
+        error("expected expression but found %s", token_show(token));
 }
 
 static parse_fn *

@@ -322,3 +322,17 @@ binary_operator_greater_than_or_equal(struct environment *env, struct expression
                 break;
         }
 }
+
+struct value
+unary_operator_negation(struct environment *env, struct expression const *operand)
+{
+        struct value val = eval_expression(env, operand);
+
+        if (val.type != VALUE_BOOLEAN) {
+                eval_panic("attempt to apply the negation operator '!' to a non-boolean value");
+        }
+
+        --val.boolean;
+
+        return val;
+}
