@@ -60,7 +60,9 @@ eval_panic(char const *fmt, ...)
         va_list ap;
         va_start(ap, fmt);
 
-        vsnprintf(err_buf, sizeof err_buf, fmt, ap);
+        int n = 0;
+        n += sprintf(err_buf, "Runtime error: ");
+        vsnprintf(err_buf + n, sizeof err_buf - n, fmt, ap);
 
         va_end(ap);
 
