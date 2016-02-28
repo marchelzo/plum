@@ -75,8 +75,17 @@ nextchar(void)
 inline static void
 skipspace(void)
 {
-        while (isspace(*chars)) {
-                nextchar();
+        int n = 0;
+        while (isspace(chars[n])) {
+                n += 1;
+        }
+
+        if (chars[n] == '\0') {
+                chars += n;
+        } else {
+                while (n --> 0) {
+                        nextchar();
+                }
         }
 }
 
@@ -226,7 +235,11 @@ lex(char const *s)
 
         dolex();
 
-        vec_push(tokens, (struct token){ .type = TOKEN_END });
+        struct token end = {
+                .type = TOKEN_END,
+                .loc = loc
+        };
+        vec_push(tokens, end);
 
         return tokens.items;
 }

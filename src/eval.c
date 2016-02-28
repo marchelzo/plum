@@ -640,6 +640,21 @@ execute_for_loop(struct environment *env, struct statement const *s)
 }
 
 static void
+execute_while_loop(struct environment *env, struct statement const *s)
+{
+        for (;;) {
+                struct value v = eval(env, s->while_loop.cond);
+                if (v.type != VALUE_BOOLEAN) {
+                        eval_panic("attempt to use a non-boolean as the condition in a while loop");
+                }
+                if (!v.boolean) {
+                        break;
+                }
+                execute(env, s->while_loop.body);
+        }
+}
+
+static void
 execute(struct environment *env, struct statement const *s)
 {
         switch (s->type) {
@@ -649,6 +664,7 @@ execute(struct environment *env, struct statement const *s)
         case STATEMENT_DEFINITION:  do_definition(env, s->target, eval(env, s->value)); break;
         case STATEMENT_RETURN:      execute_return(env, s);                             break;
         case STATEMENT_FOR_LOOP:    execute_for_loop(env, s);                           break;
+        case STATEMENT_WHILE_LOOP:  execute_while_loop(env, s);                         break;
         default:                                                                        break;
         }
 }
