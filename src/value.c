@@ -1,3 +1,4 @@
+
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -38,7 +39,7 @@ equality_test_array(struct value const *v1, struct value const *v2)
         if (v1->array->count != v2->array->count) {
                 return false;
         }
-        
+
         size_t n = v1->array->count;
 
         for (size_t i = 0; i < n; ++i) {
@@ -207,6 +208,27 @@ show_array(struct value const *a)
 }
 
 char *
+show_string(char const *s)
+{
+        vec(char) v;
+        vec_init(v);
+
+        vec_push(v, '\'');
+
+        while (*s) {
+                if (*s == '\'') {
+                        vec_push(v, '\\');
+                }
+                vec_push(v, *s++);
+        }
+
+        vec_push(v, '\'');
+        vec_push(v, '\0');
+
+        return v.items;
+}
+
+char *
 value_show(struct value const *v)
 {
         static char buffer[1024];
@@ -219,8 +241,7 @@ value_show(struct value const *v)
                 snprintf(buffer, 1024, "%f", v->real);
                 break;
         case VALUE_STRING:
-                snprintf(buffer, 1024, "'%s'", v->string);
-                break;
+                return show_string(v->string);
         case VALUE_BOOLEAN:
                 snprintf(buffer, 1024, "%s", v->boolean ? "true" : "false");
                 break;
