@@ -187,13 +187,18 @@ lexop(void)
         
         while (contains(opchars, *chars)) {
                 if (i == MAX_OP_LEN) {
-                        error("operator contains too many characters: %s", op);
+                        error("operator contains too many characters: '%s...'", op);
                 } else {
                         op[i++] = nextchar();
                 }
         }
 
-        newtoken(TOKEN_OPERATOR)->operator = sclone(op);
+        int toktype = operator_get_token_type(op);
+        if (toktype == -1) {
+                error("invalid operator encountered: '%s'", op);
+        }
+
+        newtoken(toktype);
 }
 
 static void
@@ -251,9 +256,8 @@ TEST(bigop)
 
 TEST(op)
 {
-        struct token *op = lex("\n\n<$>");
-        claim(op->type == TOKEN_OPERATOR);
-        claim(strcmp(op->operator, "<$>") == 0);
+        struct token *op = lex("\n\n&&");
+        claim(op->type == TOKEN_AND);
 }
 
 TEST(id)
@@ -344,3 +348,10 @@ TEST(keyword)
         claim(kw->type == TOKEN_IDENTIFIER);
         claim(strcmp(kw->identifier, "break_ing_news") == 0);
 }
+
+TEST(invalid_op)
+{
+        claim(lex("a <$> b;") == NULL);
+        claim(strstr(lex_error(), "invalid operator") != NULL);
+}
+

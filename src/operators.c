@@ -2,8 +2,9 @@
 
 #include "alloc.h"
 #include "value.h"
-#include "eval.h"
 #include "operators.h"
+#include "object.h"
+#include "vm.h"
 
 static char *
 str_concat(char const *s1, char const *s2)
@@ -20,319 +21,346 @@ str_concat(char const *s1, char const *s2)
 }
 
 struct value
-binary_operator_addition(struct environment *env, struct expression const *left_expr, struct expression const *right_expr)
+binary_operator_addition(struct value const *left, struct value const *right)
 {
-        struct value left = eval_expression(env, left_expr);
-        struct value right = eval_expression(env, right_expr);
 
-        if (left.type != right.type) {
-                // TODO: error
+        if (left->type != right->type) {
+                vm_panic("the operands to + must have the same type");
         }
 
-        switch (left.type) {
+        switch (left->type) {
         case VALUE_INTEGER:
                 return (struct value) {
                         .type = VALUE_INTEGER,
-                        .integer = left.integer + right.integer
+                        .integer = left->integer + right->integer
                 };
         case VALUE_REAL:
                 return (struct value) {
                         .type = VALUE_REAL,
-                        .real = left.real + right.real
+                        .real = left->real + right->real
                 };
         case VALUE_STRING:
                 return (struct value) {
                         .type = VALUE_STRING,
-                        .string = str_concat(left.string, right.string)
+                        .string = str_concat(left->string, right->string)
                 };
         default:
-                // TODO: error
+                vm_panic("+ applied to operands of invalid type");
                 break;
         }
 }
 
 struct value
-binary_operator_multiplication(struct environment *env, struct expression const *left_expr, struct expression const *right_expr)
+binary_operator_multiplication(struct value const *left, struct value const *right)
 {
-        struct value left = eval_expression(env, left_expr);
-        struct value right = eval_expression(env, right_expr);
 
-        if (left.type != right.type) {
-                // TODO: error
+        if (left->type != right->type) {
+                vm_panic("the operands to * must have the same type");
         }
 
-        switch (left.type) {
+        switch (left->type) {
         case VALUE_INTEGER:
                 return (struct value) {
                         .type = VALUE_INTEGER,
-                        .integer = left.integer * right.integer
+                        .integer = left->integer * right->integer
                 };
         case VALUE_REAL:
                 return (struct value) {
                         .type = VALUE_REAL,
-                        .real = left.real * right.real
+                        .real = left->real * right->real
                 };
         default:
-                // TODO: error
+                vm_panic("* applied to operands of invalid type");
                 break;
         }
 }
 
 struct value
-binary_operator_subtraction(struct environment *env, struct expression const *left_expr, struct expression const *right_expr)
+binary_operator_division(struct value const *left, struct value const *right)
 {
-        struct value left = eval_expression(env, left_expr);
-        struct value right = eval_expression(env, right_expr);
 
-        if (left.type != right.type) {
-                // TODO: error
+        if (left->type != right->type) {
+                vm_panic("the operands to / must have the same type");
         }
 
-        switch (left.type) {
+        switch (left->type) {
         case VALUE_INTEGER:
                 return (struct value) {
                         .type = VALUE_INTEGER,
-                        .integer = left.integer - right.integer
+                        .integer = left->integer / right->integer
                 };
         case VALUE_REAL:
                 return (struct value) {
                         .type = VALUE_REAL,
-                        .real = left.real - right.real
+                        .real = left->real / right->real
                 };
         default:
-                // TODO: error
+                vm_panic("/ applied to operands of invalid type");
                 break;
         }
-
 }
 
 struct value
-binary_operator_remainder(struct environment *env, struct expression const *left_expr, struct expression const *right_expr)
+binary_operator_subtraction(struct value const *left, struct value const *right)
 {
-        struct value left = eval_expression(env, left_expr);
-        struct value right = eval_expression(env, right_expr);
 
-        if (left.type != right.type) {
-                // TODO: error
+        if (left->type != right->type) {
+                vm_panic("the operands to - must have the same type");
         }
 
-        switch (left.type) {
+        switch (left->type) {
         case VALUE_INTEGER:
                 return (struct value) {
                         .type = VALUE_INTEGER,
-                        .integer = left.integer % right.integer
+                        .integer = left->integer - right->integer
+                };
+        case VALUE_REAL:
+                return (struct value) {
+                        .type = VALUE_REAL,
+                        .real = left->real - right->real
                 };
         default:
-                // TODO: error
+                vm_panic("- applied to operands of invalid type");
                 break;
         }
 
 }
 
 struct value
-binary_operator_and(struct environment *env, struct expression const *left_expr, struct expression const *right_expr)
+binary_operator_remainder(struct value const *left, struct value const *right)
 {
-        struct value left = eval_expression(env, left_expr);
-        if (left.type != VALUE_BOOLEAN) {
-                // TODO: error
+
+        if (left->type != right->type) {
+                vm_panic("the operands to - must have the same type");
         }
 
-        if (!left.boolean) {
-                return left;
-                        
+        switch (left->type) {
+        case VALUE_INTEGER:
+                return (struct value) {
+                        .type = VALUE_INTEGER,
+                        .integer = left->integer % right->integer
+                };
+        default:
+                vm_panic("the operands to - must be integers");
+                break;
         }
 
-        struct value right = eval_expression(env, right_expr);
-        if (right.type != VALUE_BOOLEAN) {
-                // TODO: error
-        }
-
-        return right;
 }
 
 struct value
-binary_operator_or(struct environment *env, struct expression const *left_expr, struct expression const *right_expr)
+binary_operator_and(struct value const *left, struct value const *right)
 {
-        struct value left = eval_expression(env, left_expr);
-        if (left.type != VALUE_BOOLEAN) {
+        if (left->type != VALUE_BOOLEAN) {
                 // TODO: error
         }
 
-        if (left.boolean) {
-                return left;
+        if (!left->boolean) {
+                return *left;
                         
         }
 
-        struct value right = eval_expression(env, right_expr);
-        if (right.type != VALUE_BOOLEAN) {
+        if (right->type != VALUE_BOOLEAN) {
                 // TODO: error
         }
 
-        return right;
+        return *right;
 }
 
 struct value
-binary_operator_equality(struct environment *env, struct expression const *left_expr, struct expression const *right_expr)
+binary_operator_or(struct value const *left, struct value const *right)
 {
-        struct value left = eval_expression(env, left_expr);
-        struct value right = eval_expression(env, right_expr);
+        if (left->type != VALUE_BOOLEAN) {
+                // TODO: error
+        }
+
+        if (left->boolean) {
+                return *left;
+                        
+        }
+
+        if (right->type != VALUE_BOOLEAN) {
+                // TODO: error
+        }
+
+        return *right;
+}
+
+struct value
+binary_operator_equality(struct value const *left, struct value const *right)
+{
 
         return (struct value) {
                 .type = VALUE_BOOLEAN,
-                .boolean = value_test_equality(&left, &right)
+                .boolean = value_test_equality(left, right)
         };
 }
 
 struct value
-binary_operator_non_equality(struct environment *env, struct expression const *left_expr, struct expression const *right_expr)
+binary_operator_non_equality(struct value const *left, struct value const *right)
 {
-        struct value left = eval_expression(env, left_expr);
-        struct value right = eval_expression(env, right_expr);
 
         return (struct value) {
                 .type = VALUE_BOOLEAN,
-                .boolean = !value_test_equality(&left, &right)
+                .boolean = !value_test_equality(left, right)
         };
 }
 
 struct value
-binary_operator_less_than(struct environment *env, struct expression const *left_expr, struct expression const *right_expr)
+binary_operator_less_than(struct value const *left, struct value const *right)
 {
-        struct value left = eval_expression(env, left_expr);
-        struct value right = eval_expression(env, right_expr);
 
-        if (left.type != right.type) {
-                // TODO: error
+        if (left->type != right->type) {
+                vm_panic("< applied to operands of different types");
         }
 
-        switch (left.type) {
+        switch (left->type) {
         case VALUE_INTEGER:
                 return (struct value) {
                         .type = VALUE_BOOLEAN,
-                        .integer = left.integer < right.integer
+                        .boolean = left->integer < right->integer
                 };
         case VALUE_REAL:
                 return (struct value) {
                         .type = VALUE_BOOLEAN,
-                        .real = left.real < right.real
+                        .boolean = left->real < right->real
                 };
         case VALUE_STRING:
                 return (struct value) {
                         .type = VALUE_BOOLEAN,
-                        .real = strcmp(left.string, right.string) < 0
+                        .boolean = strcmp(left->string, right->string) < 0
                 };
         default:
-                // TODO: error
+                vm_panic("< applied to operands of invlalid type");
                 break;
         }
 }
 
 struct value
-binary_operator_greater_than(struct environment *env, struct expression const *left_expr, struct expression const *right_expr)
+binary_operator_greater_than(struct value const *left, struct value const *right)
 {
-        struct value left = eval_expression(env, left_expr);
-        struct value right = eval_expression(env, right_expr);
 
-        if (left.type != right.type) {
-                // TODO: error
+        if (left->type != right->type) {
+                vm_panic("> applied to operands of different types");
         }
 
-        switch (left.type) {
+        switch (left->type) {
         case VALUE_INTEGER:
                 return (struct value) {
                         .type = VALUE_BOOLEAN,
-                        .integer = left.integer > right.integer
+                        .boolean = left->integer > right->integer
                 };
         case VALUE_REAL:
                 return (struct value) {
                         .type = VALUE_BOOLEAN,
-                        .real = left.real > right.real
+                        .boolean = left->real > right->real
                 };
         case VALUE_STRING:
                 return (struct value) {
                         .type = VALUE_BOOLEAN,
-                        .real = strcmp(left.string, right.string) > 0
+                        .boolean = strcmp(left->string, right->string) > 0
                 };
         default:
-                // TODO: error
+                vm_panic("> applied to operands of invalid type");
                 break;
         }
 }
 
 struct value
-binary_operator_less_than_or_equal(struct environment *env, struct expression const *left_expr, struct expression const *right_expr)
+binary_operator_less_than_or_equal(struct value const *left, struct value const *right)
 {
-        struct value left = eval_expression(env, left_expr);
-        struct value right = eval_expression(env, right_expr);
 
-        if (left.type != right.type) {
-                // TODO: error
+        if (left->type != right->type) {
+                vm_panic("<= applied to operands of different types");
         }
 
-        switch (left.type) {
+        switch (left->type) {
         case VALUE_INTEGER:
                 return (struct value) {
                         .type = VALUE_BOOLEAN,
-                        .integer = left.integer <= right.integer
+                        .boolean = left->integer <= right->integer
                 };
         case VALUE_REAL:
                 return (struct value) {
                         .type = VALUE_BOOLEAN,
-                        .real = left.real <= right.real
+                        .boolean = left->real <= right->real
                 };
         case VALUE_STRING:
                 return (struct value) {
                         .type = VALUE_BOOLEAN,
-                        .real = strcmp(left.string, right.string) <= 0
+                        .boolean = strcmp(left->string, right->string) <= 0
                 };
         default:
-                // TODO: error
+                vm_panic("<= applied to operands of invalid type");
                 break;
         }
 }
 
 struct value
-binary_operator_greater_than_or_equal(struct environment *env, struct expression const *left_expr, struct expression const *right_expr)
+binary_operator_greater_than_or_equal(struct value const *left, struct value const *right)
 {
-        struct value left = eval_expression(env, left_expr);
-        struct value right = eval_expression(env, right_expr);
-
-        if (left.type != right.type) {
-                // TODO: error
+        if (left->type != right->type) {
+                vm_panic(">= applied to operands of different types");
         }
 
-        switch (left.type) {
+        switch (left->type) {
         case VALUE_INTEGER:
                 return (struct value) {
                         .type = VALUE_BOOLEAN,
-                        .integer = left.integer >= right.integer
+                        .boolean = left->integer >= right->integer
                 };
         case VALUE_REAL:
                 return (struct value) {
                         .type = VALUE_BOOLEAN,
-                        .real = left.real >= right.real
+                        .boolean = left->real >= right->real
                 };
         case VALUE_STRING:
                 return (struct value) {
                         .type = VALUE_BOOLEAN,
-                        .real = strcmp(left.string, right.string) >= 0
+                        .boolean = strcmp(left->string, right->string) >= 0
                 };
         default:
-                // TODO: error
+                vm_panic(">= applied to operands of invalid type");
                 break;
         }
 }
 
 struct value
-unary_operator_negation(struct environment *env, struct expression const *operand)
+unary_operator_not(struct value const *operand)
 {
-        struct value val = eval_expression(env, operand);
-
-        if (val.type != VALUE_BOOLEAN) {
-                eval_panic("attempt to apply the negation operator '!' to a non-boolean value");
+        if (operand->type != VALUE_BOOLEAN) {
+                vm_panic("the operand to ! must be a boolean");
         }
 
-        --val.boolean;
+        return (struct value) {
+                .type = VALUE_BOOLEAN,
+                .boolean = !operand->boolean
+        };
+}
 
-        return val;
+struct value
+unary_operator_negate(struct value const *operand)
+{
+        if (operand->type == VALUE_INTEGER) {
+                return (struct value) {
+                        .type = VALUE_INTEGER,
+                        .integer = -operand->integer
+                };
+        } else if (operand->type == VALUE_REAL) {
+                return (struct value) {
+                        .type = VALUE_REAL,
+                        .real = -operand->real
+                };
+        } else {
+                vm_panic("the operand to unary - must be numeric");
+        }
+}
+
+struct value
+unary_operator_keys(struct value const *operand)
+{
+        if (operand->type != VALUE_OBJECT) {
+                vm_panic("the operand to @ must be an object");
+        }
+
+        return object_keys_array(operand->object);
 }

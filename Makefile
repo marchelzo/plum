@@ -10,6 +10,8 @@ CFLAGS += -Wno-switch
 
 TEST_FILTER ?= "."
 
+BINARIES = plum repl interpreter
+
 ifndef RELEASE
         CFLAGS += -fsanitize=undefined
         CFLAGS += -fsanitize=leak
@@ -37,7 +39,7 @@ repl: $(OBJECTS) repl.c
 	$(CC) $(CFLAGS) -c -o $@ -DFILENAME=$(patsubst src/%.c,%,$<) $<
 
 clean:
-	rm -rf src/*.o
+	rm -rf $(BINARIES) src/*.o
 
 .PHONY: test.c
 test.c: $(OBJECTS)

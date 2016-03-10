@@ -20,4 +20,22 @@ object_get_member(struct object const *obj, char const *key);
 void
 object_put_member(struct object *obj, char const *key, struct value value);
 
+struct value *
+object_put_key_if_not_exists(struct object *obj, struct value key);
+
+struct value *
+object_put_member_if_not_exists(struct object *obj, char const *member);
+
+struct value
+object_keys_array(struct object *obj);
+
+void
+object_mark(struct object *obj);
+
+void
+object_sweep(void);
+
+void
+object_gc_reset(void);
+
 #endif

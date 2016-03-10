@@ -11,30 +11,10 @@ struct value;
 
 struct environment;
 
-struct lvalue {
-        enum {
-                LVALUE_NAME,
-                LVALUE_ARRAY,
-                LVALUE_SUBSCRIPT,
-                LVALUE_MEMBER
-        } type;
-        union {
-                char const *name;
-                vec(struct lvalue *) lvalues;
-                struct {
-                        struct expression *container;
-                        struct expression *subscript;
-                };
-                struct {
-                        struct expression *object;
-                        char const *member_name;
-                };
-        };
-};
-
 struct statement {
         enum {
                 STATEMENT_FOR_LOOP,
+                STATEMENT_EACH_LOOP,
                 STATEMENT_DEFINITION,
                 STATEMENT_WHILE_LOOP,
                 STATEMENT_CONDITIONAL,
@@ -45,20 +25,29 @@ struct statement {
                 STATEMENT_BLOCK,
                 STATEMENT_HALT,
                 STATEMENT_NULL,
-                STATEMENT_EXPRESSION
+                STATEMENT_EXPRESSION,
+                STATEMENT_IMPORT,
         } type;
         union {
                 struct expression *expression;
                 struct expression *return_value;
                 vec(struct statement *) statements;
                 struct {
-                        // for-loop controlling expressions
+                        char *module;
+                        char *as;
+                } import;
+                struct {
                         struct statement *init;
                         struct expression *cond;
                         struct expression *next;
 
                         struct statement *body;
                 } for_loop;
+                struct {
+                        struct expression *target;
+                        struct expression *array;
+                        struct statement *body;
+                } each;
                 struct {
                         struct expression *cond;
                         struct statement *body;
@@ -74,7 +63,7 @@ struct statement {
                         struct statement *body;
                 } function;
                 struct {
-                        struct lvalue *target;
+                        struct expression *target;
                         struct expression *value;
                 };
         };
@@ -95,23 +84,64 @@ struct expression {
                 EXPRESSION_METHOD_CALL,
                 EXPRESSION_VARIABLE,
                 EXPRESSION_ASSIGNMENT,
-                EXPRESSION_UNOP,
-                EXPRESSION_BINOP,
-                EXPRESSION_NIL
+
+                EXPRESSION_PLUS,
+                EXPRESSION_MINUS,
+                EXPRESSION_STAR,
+                EXPRESSION_DIV,
+                EXPRESSION_PERCENT,
+                EXPRESSION_AND,
+                EXPRESSION_OR,
+                EXPRESSION_LT,
+                EXPRESSION_LEQ,
+                EXPRESSION_GT,
+                EXPRESSION_GEQ,
+                EXPRESSION_DBL_EQ,
+                EXPRESSION_NOT_EQ,
+
+                EXPRESSION_PREFIX_MINUS,
+                EXPRESSION_PREFIX_BANG,
+                EXPRESSION_PREFIX_AT,
+                EXPRESSION_PREFIX_INC,
+                EXPRESSION_PREFIX_DEC,
+
+                EXPRESSION_POSTFIX_INC,
+                EXPRESSION_POSTFIX_DEC,
+
+                EXPRESSION_NIL,
+
+                EXPRESSION_IDENTIFIER_LIST,
+
+                EXPRESSION_MODULE_ACCESS,
         } type;
         union {
                 intmax_t integer;
                 bool boolean;
                 char *string;
                 float real;
-                char *identifier;
+                struct expression *operand;
                 vec(struct expression *) elements;
+                vec(char *) identifiers;
                 struct {
-                        struct lvalue *target;
+                        char *module;
+                        char *identifier;
+                };
+                struct {
+                        struct expression *left;
+                        struct expression *right;
+                };
+                struct {
+                        int symbol;
+                        bool local;
+                };
+                struct {
+                        struct expression *target;
                         struct expression *value;
                 };
                 struct {
                         vec(char *) params;
+                        vec(int) param_symbols;
+                        vec(int) bound_symbols;
                         struct statement *body;
                 };
                 struct {
@@ -125,15 +155,6 @@ struct expression {
                 struct {
                         struct expression *container;
                         struct expression *subscript;
-                };
-                struct {
-                        struct value (*unop)(struct environment *, struct expression const *);
-                        struct expression *operand;
-                };
-                struct {
-                        struct value (*binop)(struct environment *, struct expression const *, struct expression const *);
-                        struct expression *left;
-                        struct expression *right;
                 };
                 struct {
                         struct expression *object;

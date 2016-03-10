@@ -1,13 +1,20 @@
-
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <math.h>
 
 #include "value.h"
 #include "test.h"
 #include "util.h"
+#include "object.h"
+#include "log.h"
+#include "gc.h"
+#include "vm.h"
+
+static struct value_array *array_chain;
+static struct ref_vector *ref_vector_chain;
 
 static bool
 equality_test_string(struct value const *v1, struct value const *v2)
@@ -60,7 +67,7 @@ equality_test_object(struct value const *v1, struct value const *v2)
 static bool
 equality_test_function(struct value const *v1, struct value const *v2)
 {
-        return v1->body == v2->body;
+        return v1->code == v2->code;
 }
 
 static bool
@@ -163,8 +170,8 @@ value_hash(struct value const *val)
         case VALUE_INTEGER:   return int_hash(val->integer);
         case VALUE_REAL:      return flt_hash(val->real);
         case VALUE_ARRAY:     return ary_hash(val);
-        case VALUE_OBJECT:    return ptr_hash(val);
-        case VALUE_FUNCTION:  return ptr_hash(val);
+        case VALUE_OBJECT:    return ptr_hash(val->object);
+        case VALUE_FUNCTION:  return ptr_hash(val->code);
         }
 
         assert(false);
@@ -207,7 +214,7 @@ show_array(struct value const *a)
         return s;
 }
 
-char *
+static char *
 show_string(char const *s)
 {
         vec(char) v;
@@ -250,12 +257,38 @@ value_show(struct value const *v)
                 break;
         case VALUE_ARRAY:
                 return show_array(v);
-        default:
-                // TODO: finish
+        case VALUE_OBJECT:
+                snprintf(buffer, 1024, "<object at %p>", (void *) v->object);
                 break;
+        case VALUE_FUNCTION:
+                snprintf(buffer, 1024, "<function at %p>", (void *) v->code);
+                break;
+        case VALUE_BUILTIN_FUNCTION:
+                snprintf(buffer, 1024, "<builtin function>");
+                break;
+        default:
+                return sclone("UNKNOWN VALUE");
         }
 
         return sclone(buffer);
+}
+
+int
+value_compare(void const *_v1, void const *_v2)
+{
+        struct value const *v1 = _v1;
+        struct value const *v2 = _v2;
+
+        if (v1->type != v2->type) {
+                vm_panic("attempt to compare values of different types");
+        }
+
+        switch (v1->type) {
+        case VALUE_INTEGER: return (v1->integer - v2->integer); // TODO
+        case VALUE_REAL:    return round(v1->real - v2->real);
+        case VALUE_STRING:  return strcmp(v1->string, v2->string);
+        default:            vm_panic("attempt to compare values of invalid types");
+        }
 }
 
 bool
@@ -266,6 +299,124 @@ value_test_equality(struct value const *v1, struct value const *v2)
         }
 
         return equality_tests[v1->type](v1, v2);
+}
+
+inline static void
+function_mark_references(struct value *v)
+{
+        for (int i = 0; i < v->refs->count; ++i) {
+                vm_mark_variable((struct variable *)v->refs->refs[i].pointer);
+        }
+}
+
+void
+value_mark(struct value *v)
+{
+        switch (v->type) {
+        case VALUE_ARRAY:    value_array_mark(v->array);  break;
+        case VALUE_OBJECT:   object_mark(v->object);      break;
+        case VALUE_FUNCTION: function_mark_references(v); break;
+        default:                                          break;
+        }
+}
+
+struct value_array *
+value_array_new(void)
+{
+        struct value_array *a = gc_alloc(sizeof *a);
+        a->next = array_chain;
+        a->mark = true;
+        array_chain = a;
+
+        vec_init(*a);
+
+        return a;
+}
+
+struct ref_vector *
+ref_vector_new(int n)
+{
+        struct ref_vector *v = gc_alloc(sizeof *v + sizeof (struct reference) * n);
+        v->count = n;
+
+        v->next = ref_vector_chain;
+        ref_vector_chain = v;
+
+        return v;
+}
+
+void
+value_array_mark(struct value_array *a)
+{
+        a->mark = true;
+
+        for (int i = 0; i < a->count; ++i) {
+                value_mark(&a->items[i]);
+        }
+}
+
+void
+value_array_sweep(void)
+{
+        while (array_chain != NULL && !array_chain->mark) {
+                struct value_array *next = array_chain->next;
+                vec_empty(*array_chain);
+                LOG("FREEING ARRAY");
+                free(array_chain);
+                array_chain = next;
+        }
+        if (array_chain != NULL) {
+                array_chain->mark = false;
+        }
+        for (struct value_array *array = array_chain; array != NULL && array->next != NULL;) {
+                struct value_array *next;
+                if (!array->next->mark) {
+                        next = array->next->next;
+                        vec_empty(*array->next);
+                        LOG("FREEING ARRAY");
+                        free(array->next);
+                        array->next = next;
+                } else {
+                        next = array->next;
+                }
+                if (next != NULL) {
+                        next->mark = false;
+                }
+                array = next;
+        }
+}
+
+void
+value_ref_vector_sweep(void)
+{
+        while (ref_vector_chain != NULL && !ref_vector_chain->mark) {
+                struct ref_vector *next = ref_vector_chain->next;
+                free(ref_vector_chain);
+                ref_vector_chain = next;
+        }
+        if (ref_vector_chain != NULL) {
+                ref_vector_chain->mark = false;
+        }
+        for (struct ref_vector *ref_vector = ref_vector_chain; ref_vector != NULL && ref_vector->next != NULL;) {
+                struct ref_vector *next;
+                if (!ref_vector->next->mark) {
+                        next = ref_vector->next->next;
+                        free(ref_vector->next);
+                        ref_vector->next = next;
+                } else {
+                        next = ref_vector->next;
+                }
+                if (next != NULL) {
+                        next->mark = false;
+                }
+                ref_vector = next;
+        }
+}
+
+void
+value_gc_reset(void)
+{
+        array_chain = NULL;
 }
 
 TEST(hash)

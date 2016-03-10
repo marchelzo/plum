@@ -3,6 +3,7 @@
 
 #include <unistd.h>
 #include <sys/file.h>
+#include <stdio.h>
 
 #ifndef PLUM_RELEASE
 #define LOG(...) ( \

@@ -1,12 +1,13 @@
 #include <stdio.h>
 
 #include "value.h"
+#include "vm.h"
 
 struct value
 builtin_print(value_vector *args)
 {
         if (args->count != 1) {
-                // TODO: error
+                vm_panic("the builtin print function expects a single argument, but it was passed %zu", args->count);
         }
 
         if (args->items[0].type == VALUE_STRING) {

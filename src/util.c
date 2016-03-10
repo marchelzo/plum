@@ -48,8 +48,13 @@ contains(char const *s, char c)
 char *slurp(char const *path)
 {
         FILE *f = fopen(path, "r");
+        if (f == NULL) {
+                return NULL;
+        }
+
         char *source = malloc(8192 * 6);
         int n = fread(source, 1, 8192, f);
         source[n] = '\0';
+
         return source;
 }

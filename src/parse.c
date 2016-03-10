@@ -16,41 +16,36 @@
 #include "lex.h"
 #include "operators.h"
 #include "value.h"
+#include "log.h"
+#include "vm.h"
+
+#define BINARY_OPERATOR(name, token, prec, right_assoc) \
+        static struct expression * \
+        infix_ ## name(struct expression *left) \
+        { \
+                consume(TOKEN_ ## token); \
+                struct expression *e = alloc(sizeof *e); \
+                e->type = EXPRESSION_ ## token; \
+                e->left = left; \
+                e->right = parse_expr(prec - (right_assoc ? 1 : 0)); \
+                return e; \
+        } \
+
+#define PREFIX_OPERATOR(name, token, prec) \
+        static struct expression * \
+        prefix_ ## name(void) \
+        { \
+                consume(TOKEN_ ## token); \
+                struct expression *e = alloc(sizeof *e); \
+                e->type = EXPRESSION_PREFIX_ ## token; \
+                e->operand = parse_expr(prec); \
+                return e; \
+        } \
 
 typedef struct expression *parse_fn();
 
 enum {
         MAX_ERR_LEN  = 2048
-};
-
-struct binop {
-        struct value (*function)(struct environment *, struct expression const *, struct expression const *);
-        char const *op;
-        int prec;
-};
-
-struct unop {
-        struct value (*function)(struct environment *, struct expression const *);
-        char const *op;
-};
-
-static struct binop binary_operators[] = {
-        { .prec = 3, .function = binary_operator_addition,              .op = "+"  },
-        { .prec = 3, .function = binary_operator_subtraction,           .op = "-"  },
-        { .prec = 4, .function = binary_operator_multiplication,        .op = "*"  },
-        { .prec = 3, .function = binary_operator_remainder,             .op = "%"  },
-        { .prec = 1, .function = binary_operator_and,                   .op = "&&" },
-        { .prec = 1, .function = binary_operator_or,                    .op = "||" },
-        { .prec = 2, .function = binary_operator_equality,              .op = "==" },
-        { .prec = 2, .function = binary_operator_non_equality,          .op = "!=" },
-        { .prec = 2, .function = binary_operator_less_than,             .op = "<"  },
-        { .prec = 2, .function = binary_operator_greater_than,          .op = ">"  },
-        { .prec = 2, .function = binary_operator_less_than_or_equal,    .op = "<=" },
-        { .prec = 2, .function = binary_operator_greater_than_or_equal, .op = ">=" },
-};
-
-static struct unop unary_operators[] = {
-        { .function = unary_operator_negation, .op = "!" },
 };
 
 static jmp_buf jb;
@@ -65,10 +60,10 @@ static struct statement *
 parse_statement(void);
 
 static struct expression *
-parse_expr(void);
+parse_expr(int);
 
 static struct expression *
-parse_e(int);
+assignment_lvalue(struct expression *e);
 
 noreturn static void
 error(char const *fmt, ...)
@@ -118,36 +113,6 @@ consume_keyword(int type)
         expect_keyword(type);
         token += 1;
 
-}
-
-static struct unop
-get_unary_operator(char const *op)
-{
-        size_t n_unops = sizeof unary_operators / sizeof unary_operators[0];
-
-        for (size_t i = 0; i < n_unops; ++i) {
-                struct unop o = unary_operators[i];
-                if (strcmp(op, o.op) == 0) {
-                        return o;
-                }
-        }
-
-        error("invalid unary operator: %s", op);
-}
-
-static struct binop
-get_binary_operator(char const *op)
-{
-        size_t n_binops = sizeof binary_operators / sizeof binary_operators[0];
-
-        for (size_t i = 0; i < n_binops; ++i) {
-                struct binop b = binary_operators[i];
-                if (strcmp(op, b.op) == 0) {
-                        return b;
-                }
-        }
-
-        error("invalid binary operator: %s", op);
 }
 
 /* * * * | prefix parsers | * * * */
@@ -200,9 +165,27 @@ prefix_variable(void)
 
         struct expression *e = alloc(sizeof *e);
         e->type = EXPRESSION_VARIABLE;
-        e->identifier = sclone(token->identifier);
-
+        e->identifier = token->identifier;
         consume(TOKEN_IDENTIFIER);
+
+        if (token->type == ':' && token[1].type == ':') {
+                vec(char) module;
+                vec_init(module);
+                e->type = EXPRESSION_MODULE_ACCESS;
+                while (token->type == ':' && token[1].type == ':') {
+                        if (module.count > 0) {
+                                vec_push(module, '/');
+                        }
+                        vec_push_n(module, e->identifier, strlen(e->identifier));
+                        consume(':');
+                        consume(':');
+                        expect(TOKEN_IDENTIFIER);
+                        e->identifier = token->identifier;
+                        consume(TOKEN_IDENTIFIER);
+                }
+                vec_push(module, '\0');
+                e->module = module.items;
+        }
 
         return e;
 }
@@ -244,13 +227,56 @@ body:
 }
 
 static struct expression *
-prefix_parenthesized_expression(void)
+prefix_parenthesis(void)
 {
-        consume('(');
-        struct expression *e = parse_expr();
-        consume(')');
+        /*
+         * This can either be a plain old parenthesized expression, e.g., (4 + 4)
+         * or it can be an identifier list for an arrow function, e.g., (a, b, c).
+         */
 
-        return e;
+        consume('(');
+
+        /*
+         * () is an empty identifier list.
+         */
+        if (token->type == ')') {
+                consume(')');
+                struct expression *list = alloc(sizeof *list);
+                list->type = EXPRESSION_IDENTIFIER_LIST;
+                vec_init(list->identifiers);
+                return list;
+        }
+
+        struct expression *e = parse_expr(0);
+
+        if (token->type == ',') {
+                /*
+                 * It _must_ be an identifier list.
+                 */
+                if (e->type != EXPRESSION_VARIABLE) {
+                        error("non-identifier in identifier list");
+                }
+
+                struct expression *list = alloc(sizeof *list);
+                list->type = EXPRESSION_IDENTIFIER_LIST;
+                vec_init(list->identifiers);
+                vec_push(list->identifiers, e->identifier);
+                free(e);
+
+                while (token->type == ',') {
+                        consume(',');
+                        expect(TOKEN_IDENTIFIER);
+                        vec_push(list->identifiers, token->identifier);
+                        consume(TOKEN_IDENTIFIER);
+                }
+
+                consume(')');
+
+                return list;
+        } else {
+                consume(')');
+                return e;
+        }
 }
 
 static struct expression *
@@ -289,23 +315,6 @@ prefix_nil(void)
 }
 
 static struct expression *
-prefix_operator(void)
-{
-        expect(TOKEN_OPERATOR);
-        struct unop op = get_unary_operator(token->operator);
-        consume(TOKEN_OPERATOR);
-
-        struct expression *operand = parse_expr();
-        struct expression *e = alloc(sizeof *e);
-
-        e->type = EXPRESSION_UNOP;
-        e->operand = operand;
-        e->unop = op.function;
-
-        return e;
-}
-
-static struct expression *
 prefix_array(void)
 {
         consume('[');
@@ -318,12 +327,12 @@ prefix_array(void)
                 consume(']');
                 return e;
         } else {
-                vec_push(e->elements, parse_expr());
+                vec_push(e->elements, parse_expr(0));
         }
 
         while (token->type == ',') {
                 consume(',');
-                vec_push(e->elements, parse_expr());
+                vec_push(e->elements, parse_expr(0));
         }
 
         consume(']');
@@ -346,22 +355,28 @@ prefix_object(void)
                 consume('}');
                 return e;
         } else {
-                vec_push(e->keys, parse_expr());
+                vec_push(e->keys, parse_expr(0));
                 consume(':');
-                vec_push(e->values, parse_expr());
+                vec_push(e->values, parse_expr(0));
         }
 
         while (token->type == ',') {
                 consume(',');
-                vec_push(e->keys, parse_expr());
+                vec_push(e->keys, parse_expr(0));
                 consume(':');
-                vec_push(e->values, parse_expr());
+                vec_push(e->values, parse_expr(0));
         }
 
         consume('}');
 
         return e;
 }
+
+PREFIX_OPERATOR(at,    AT,    4)
+PREFIX_OPERATOR(minus, MINUS, 4)
+PREFIX_OPERATOR(bang,  BANG,  4)
+PREFIX_OPERATOR(inc,   INC,   6)
+PREFIX_OPERATOR(dec,   DEC,   6)
 /* * * * | end of prefix parsers | * * * */
 
 /* * * * | infix parsers | * * * */
@@ -379,12 +394,12 @@ infix_function_call(struct expression *left)
                 consume(')');
                 return e;
         } else {
-                vec_push(e->args, parse_expr());
+                vec_push(e->args, parse_expr(0));
         }
 
         while (token->type == ',') {
                 consume(',');
-                vec_push(e->args, parse_expr());
+                vec_push(e->args, parse_expr(0));
         }
 
         consume(')');
@@ -400,7 +415,7 @@ infix_subscript(struct expression *left)
         struct expression *e = alloc(sizeof *e);
         e->type = EXPRESSION_SUBSCRIPT;
         e->container = left;
-        e->subscript = parse_expr();
+        e->subscript = parse_expr(0);
 
         consume(']');
 
@@ -435,12 +450,12 @@ infix_member_access(struct expression *left)
                 consume(')');
                 return e;
         } else {
-                vec_push(e->method_args, parse_expr());
+                vec_push(e->method_args, parse_expr(0));
         }
 
         while (token->type == ',') {
                 consume(',');
-                vec_push(e->method_args, parse_expr());
+                vec_push(e->method_args, parse_expr(0));
         }
 
         consume(')');
@@ -449,38 +464,118 @@ infix_member_access(struct expression *left)
 }
 
 static struct expression *
-infix_operator(struct expression *left)
+infix_arrow_function(struct expression *left)
 {
-        expect(TOKEN_OPERATOR);
-        struct binop op = get_binary_operator(token->operator);
-        consume(TOKEN_OPERATOR);
+        if (left->type != EXPRESSION_VARIABLE && left->type != EXPRESSION_IDENTIFIER_LIST) {
+                error("non-identifier used in identifier list");
+        }
 
-        struct expression *right = parse_e(op.prec);
+        consume(TOKEN_ARROW);
 
         struct expression *e = alloc(sizeof *e);
-        e->type = EXPRESSION_BINOP;
-        e->left = left;
-        e->right = right;
-        e->binop = op.function;
+        e->type = EXPRESSION_FUNCTION;
+        vec_init(e->params);
+
+        if (left->type == EXPRESSION_VARIABLE) {
+                vec_push(e->params, left->identifier);
+        } else {
+                e->params.items = left->identifiers.items;
+                e->params.count = left->identifiers.count;
+        }
+
+        free(left);
+
+        struct statement *ret = alloc(sizeof *ret);
+        ret->type = STATEMENT_RETURN;
+        ret->return_value = parse_expr(0);
+
+        e->body = ret;
 
         return e;
+
 }
+
+static struct expression *
+infix_assignment(struct expression *left)
+{
+        struct expression *e = alloc(sizeof *e);
+
+        consume(TOKEN_EQ);
+
+        e->type = EXPRESSION_ASSIGNMENT;
+        e->target = assignment_lvalue(left);
+        e->value = parse_expr(0);
+        
+        return e;
+}
+
+static struct expression *
+postfix_inc(struct expression *left)
+{
+        struct expression *e = alloc(sizeof *e);
+
+        consume(TOKEN_INC);
+
+        e->type = EXPRESSION_POSTFIX_INC;
+        e->operand = assignment_lvalue(left);
+        
+        return e;
+}
+
+static struct expression *
+postfix_dec(struct expression *left)
+{
+        struct expression *e = alloc(sizeof *e);
+
+        consume(TOKEN_DEC);
+
+        e->type = EXPRESSION_POSTFIX_DEC;
+        e->operand = assignment_lvalue(left);
+        
+        return e;
+}
+
+BINARY_OPERATOR(star,    STAR,    6, false)
+BINARY_OPERATOR(div,     DIV,     6, true )
+BINARY_OPERATOR(percent, PERCENT, 6, false)
+
+BINARY_OPERATOR(plus,    PLUS,    5, false)
+BINARY_OPERATOR(minus,   MINUS,   5, false)
+
+BINARY_OPERATOR(lt,      LT,      4, false)
+BINARY_OPERATOR(gt,      GT,      4, false)
+BINARY_OPERATOR(geq,     GEQ,     4, false)
+BINARY_OPERATOR(leq,     LEQ,     4, false)
+
+BINARY_OPERATOR(not_eq,  NOT_EQ,  3, false)
+BINARY_OPERATOR(dbl_eq,  DBL_EQ,  3, false)
+
+BINARY_OPERATOR(or,      OR,      2, false)
+BINARY_OPERATOR(and,    AND,      2, false)
 /* * * * | end of infix parsers | * * * */
 
 static parse_fn *
 get_prefix_parser(void)
 {
         switch (token->type) {
-        case TOKEN_OPERATOR:   return prefix_operator;
         case TOKEN_INTEGER:    return prefix_integer;
         case TOKEN_REAL:       return prefix_real;
         case TOKEN_STRING:     return prefix_string;
+
         case TOKEN_IDENTIFIER: return prefix_variable;
         case TOKEN_KEYWORD:    goto keyword;
-        case '(':              return prefix_parenthesized_expression;
+
+        case '(':              return prefix_parenthesis;
         case '[':              return prefix_array;
         case '{':              return prefix_object;
-        default:               goto error;
+
+        case TOKEN_BANG:       return prefix_bang;
+        case TOKEN_AT:         return prefix_at;
+        case TOKEN_MINUS:      return prefix_minus;
+        case TOKEN_INC:        return prefix_inc;
+        case TOKEN_DEC:        return prefix_dec;
+
+        default:               return NULL;
         }
 
 keyword:
@@ -490,99 +585,168 @@ keyword:
         case KEYWORD_TRUE:     return prefix_true;
         case KEYWORD_FALSE:    return prefix_false;
         case KEYWORD_NIL:      return prefix_nil;
-        default:               goto error;
+        default:               return NULL;
         }
-
-error:
-        error("expected expression but found %s", token_show(token));
 }
 
 static parse_fn *
 get_infix_parser(void)
 {
         switch (token->type) {
-        case TOKEN_OPERATOR:   return infix_operator;
-        case '(':              return infix_function_call;
-        case '.':              return infix_member_access;
-        case '[':              return infix_subscript;
-        default:               error(""); // TODO
+        case '(':             return infix_function_call;
+        case '.':             return infix_member_access;
+        case '[':             return infix_subscript;
+        case TOKEN_INC:       return postfix_inc;
+        case TOKEN_DEC:       return postfix_dec;
+        case TOKEN_ARROW:     return infix_arrow_function;
+        case TOKEN_EQ:        return infix_assignment;
+        case TOKEN_STAR:      return infix_star;
+        case TOKEN_DIV:       return infix_div;
+        case TOKEN_PERCENT:   return infix_percent;
+        case TOKEN_PLUS:      return infix_plus;
+        case TOKEN_MINUS:     return infix_minus;
+        case TOKEN_LT:        return infix_lt;
+        case TOKEN_GT:        return infix_gt;
+        case TOKEN_GEQ:       return infix_geq;
+        case TOKEN_LEQ:       return infix_leq;
+        case TOKEN_NOT_EQ:    return infix_not_eq;
+        case TOKEN_DBL_EQ:    return infix_dbl_eq;
+        case TOKEN_OR:        return infix_or;
+        case TOKEN_AND:       return infix_and;
+        default:              return NULL;
         }
-}
-
-static int
-get_infix_operator_prec(char const *op)
-{
-        if (strcmp(op, "=") == 0) {
-                return -1;
-        }
-
-        return get_binary_operator(op).prec;
 }
 
 static int
 get_infix_prec(void)
 {
         switch (token->type) {
-        case TOKEN_OPERATOR: return get_infix_operator_prec(token->operator);
-        case '[':            return 5;
-        case '(':            return 5;
-        case '.':            return 6;
-        default:             return -1;
+        case '.':           return 9;
+
+        case '[':           return 8;
+        case '(':           return 8;
+
+        case TOKEN_INC:     return 7;
+        case TOKEN_DEC:     return 7;
+
+        case TOKEN_PERCENT: return 6;
+        case TOKEN_DIV:     return 6;
+        case TOKEN_STAR:    return 6;
+
+        case TOKEN_MINUS:   return 5;
+        case TOKEN_PLUS:    return 5;
+
+        case TOKEN_GEQ:     return 4;
+        case TOKEN_LEQ:     return 4;
+        case TOKEN_GT:      return 4;
+        case TOKEN_LT:      return 4;
+
+        case TOKEN_NOT_EQ:  return 3;
+        case TOKEN_DBL_EQ:  return 3;
+
+        case TOKEN_OR:      return 2;
+        case TOKEN_AND:     return 2;
+
+        case TOKEN_EQ:      return 1;
+        case TOKEN_ARROW:   return 1;
+
+        default:            return -1;
         }
 }
 
-static struct lvalue *
-definition_lvalue(struct expression const *e)
+static struct expression *
+assignment_lvalue(struct expression *e)
 {
-        struct lvalue *lv = alloc(sizeof *lv);
-
-        if (e->type == EXPRESSION_VARIABLE) {
-                lv->type = LVALUE_NAME;
-                lv->name = sclone(e->identifier);
-        } else if (e->type == EXPRESSION_ARRAY) {
-                lv->type = LVALUE_ARRAY;
-                vec_init(lv->lvalues);
+        switch (e->type) {
+        case EXPRESSION_VARIABLE:
+        case EXPRESSION_SUBSCRIPT:
+        case EXPRESSION_MEMBER_ACCESS:
+                return e;
+        case EXPRESSION_ARRAY:
                 for (size_t i = 0; i < e->elements.count; ++i) {
-                        vec_push(lv->lvalues, definition_lvalue(e->elements.items[i]));
+                        e->elements.items[i] = assignment_lvalue(e->elements.items[i]);
                 }
-        } else {
-                error("invalid lvalue in let assignment statement");
+                return e;
+        default:
+                error("expression is not an lvalue");
         }
-
-        return lv;
 }
 
-static struct lvalue *
-assignment_lvalue(struct expression const *e)
+/*
+ * This is kind of a hack.
+ */
+static struct expression *
+parse_definition_lvalue(int expect, int kw)
 {
-        struct lvalue *lv = alloc(sizeof *lv);
+        struct expression *e, *elem;
+        struct token *save = token;
 
-        if (e->type == EXPRESSION_VARIABLE) {
-                lv->type = LVALUE_NAME;
-                lv->name = sclone(e->identifier);
-        } else if (e->type == EXPRESSION_ARRAY) {
-                lv->type = LVALUE_ARRAY;
-                vec_init(lv->lvalues);
-                for (size_t i = 0; i < e->elements.count; ++i) {
-                        vec_push(lv->lvalues, assignment_lvalue(e->elements.items[i]));
+        switch (token->type) {
+        case TOKEN_IDENTIFIER:
+                e = alloc(sizeof *e);
+                e->type = EXPRESSION_VARIABLE;
+                e->identifier = token->identifier;
+                consume(TOKEN_IDENTIFIER);
+                break;
+        case '[':
+                consume('[');
+                e = alloc(sizeof *e);
+                e->type = EXPRESSION_ARRAY;
+                vec_init(e->elements);
+                if (token->type == ']') {
+                        consume(']');
+                        break;
+                } else {
+                        if (elem = parse_definition_lvalue(-1, -1), elem == NULL) {
+                                vec_empty(e->elements);
+                                goto error;
+                        } else {
+                                vec_push(e->elements, elem);
+                        }
                 }
-        } else if (e->type == EXPRESSION_SUBSCRIPT) {
-                lv->type = LVALUE_SUBSCRIPT;
-                lv->container = e->container;
-                lv->subscript = e->subscript;
-        } else if (e->type == EXPRESSION_MEMBER_ACCESS) {
-                lv->type = LVALUE_MEMBER;
-                lv->object = e->object;
-                lv->member_name = sclone(e->member_name);
-        } else {
-                error("invalid lvalue in assignment expression");
+                while (token->type == ',') {
+                        consume(',');
+                        if (elem = parse_definition_lvalue(-1, -1), elem == NULL) {
+                                vec_empty(e->elements);
+                                goto error;
+                        } else {
+                                vec_push(e->elements, elem);
+                        }
+
+                }
+                if (token->type != ']') {
+                        vec_empty(e->elements);
+                        goto error;
+                }
+
+                consume(']');
+                break;
+        case '(':
+                consume('(');
+                e = parse_definition_lvalue(-1, -1);
+                if (e == NULL || token->type != ')') {
+                        goto error;
+                }
+                consume(')');
+                break;
+        default:
+                return NULL;
         }
 
-        return lv;
+        if (((expect != -1) && (token->type != expect)) || (expect == TOKEN_KEYWORD && token->keyword != kw)) {
+                goto error;
+        }
+
+        return e;
+
+error:
+        free(e);
+        token = save;
+        return NULL;
 }
 
 static struct statement *
-parse_for_loop()
+parse_for_loop(void)
 {
         consume_keyword(KEYWORD_FOR);
 
@@ -591,12 +755,32 @@ parse_for_loop()
 
         consume('(');
 
+        /*
+         * First try to parse this as a for-each loop. If that fails, assume it's
+         * a C-style for loop.
+         */
+        struct expression *each_target = parse_definition_lvalue(TOKEN_KEYWORD, KEYWORD_IN);
+        if (each_target != NULL) {
+                s->type = STATEMENT_EACH_LOOP;
+                s->each.target = each_target;
+
+                consume_keyword(KEYWORD_IN);
+
+                s->each.array = parse_expr(0);
+
+                consume(')');
+
+                s->each.body = parse_statement();
+
+                return s;
+        }
+
         s->for_loop.init = parse_statement();
 
         if (token->type == ';') {
                 s->for_loop.cond = NULL;
         } else {
-                s->for_loop.cond = parse_expr();
+                s->for_loop.cond = parse_expr(0);
         }
 
         consume(';');
@@ -604,7 +788,7 @@ parse_for_loop()
         if (token->type == ')') {
                 s->for_loop.next = NULL;
         } else {
-                s->for_loop.next = parse_expr();
+                s->for_loop.next = parse_expr(0);
         }
 
         consume(')');
@@ -623,7 +807,7 @@ parse_while_loop()
         s->type = STATEMENT_WHILE_LOOP;
 
         consume('(');
-        s->while_loop.cond = parse_expr();
+        s->while_loop.cond = parse_expr(0);
         consume(')');
 
         s->while_loop.body = parse_statement();
@@ -640,7 +824,7 @@ parse_if_statement()
         s->type = STATEMENT_CONDITIONAL;
 
         consume('(');
-        s->conditional.cond = parse_expr();
+        s->conditional.cond = parse_expr(0);
         consume(')');
 
         s->conditional.then_branch = parse_statement();
@@ -704,7 +888,7 @@ parse_return_statement()
 
         struct statement *s = alloc(sizeof *s);
         s->type = STATEMENT_RETURN;
-        s->return_value = parse_expr();
+        s->return_value = parse_expr(0);
 
         consume(';');
 
@@ -717,16 +901,15 @@ parse_let_definition()
 {
         consume_keyword(KEYWORD_LET);
 
-        struct lvalue *target = definition_lvalue(parse_e(0));
-
-        if (token->type != TOKEN_OPERATOR || strcmp(token->operator, "=") != 0) {
-                error("expected %s after lvalue in assignment statement but found %s", token_show_type('='), token_show(token));
+        struct expression *target = parse_definition_lvalue(TOKEN_EQ, -1);
+        if (target == NULL) {
+                error("failed to parse lvalue in 'let' definition");
         }
 
-        consume(TOKEN_OPERATOR);
+        consume(TOKEN_EQ);
 
-        struct expression *value = parse_expr();
-
+        struct expression *value = parse_expr(0);
+        
         consume(';');
 
         struct statement *s = alloc(sizeof *s);
@@ -761,13 +944,13 @@ parse_null_statement()
 }
 
 static struct expression *
-parse_e(int prec)
+parse_expr(int prec)
 {
         struct expression *e;
 
         parse_fn *f = get_prefix_parser();
         if (f == NULL) {
-                error("expected expression but found %s", ""); // TODO
+                error("expected expression but found %s", token_show(token));
         }
 
         e = f();
@@ -775,29 +958,12 @@ parse_e(int prec)
         while (prec < get_infix_prec()) {
                 f = get_infix_parser();
                 if (f == NULL) {
-                        error("expected operator but found %s", ""); // TODO
+                        error("unexpected token after expression: %s", token_show(token));
                 }
                 e = f(e);
         }
 
         return e;
-}
-
-inline static struct expression *
-parse_expr(void)
-{
-        struct expression *e = parse_e(0);
-
-        if (token->type == TOKEN_OPERATOR && strcmp(token->operator, "=") == 0) {
-                consume(TOKEN_OPERATOR);
-                struct expression *assignment = alloc(sizeof *assignment);
-                assignment->type = EXPRESSION_ASSIGNMENT;
-                assignment->target = assignment_lvalue(e);
-                assignment->value = parse_expr();
-                return assignment;
-        } else {
-                return e;
-        }
 }
 
 static struct statement *
@@ -820,6 +986,48 @@ parse_block(void)
 }
 
 static struct statement *
+parse_import(void)
+{
+        struct statement *s = alloc(sizeof *s);
+        s->type = STATEMENT_IMPORT;
+
+        consume_keyword(KEYWORD_IMPORT);
+
+        vec(char) module;
+        vec_init(module);
+
+        expect(TOKEN_IDENTIFIER);
+        vec_push_n(module, token->identifier, strlen(token->identifier));
+        consume(TOKEN_IDENTIFIER);
+
+        while (token->type == ':') {
+                vec_push(module, '/');
+                consume(':');
+                consume(':');
+                expect(TOKEN_IDENTIFIER);
+                vec_push_n(module, token->identifier, strlen(token->identifier));
+                consume(TOKEN_IDENTIFIER);
+        }
+
+        vec_push(module, '\0');
+        s->import.module = module.items;
+
+        // TODO: maybe make 'as' an actual keyword
+        if (token->type == TOKEN_IDENTIFIER && strcmp(token->identifier, "as") == 0) {
+                consume(TOKEN_IDENTIFIER);
+                expect(TOKEN_IDENTIFIER);
+                s->import.as = token->identifier;
+                consume(TOKEN_IDENTIFIER);
+        } else {
+                s->import.as = s->import.module;
+        }
+
+        consume(';');
+
+        return s;
+}
+
+static struct statement *
 parse_statement(void)
 {
         struct statement *s;
@@ -831,7 +1039,7 @@ parse_statement(void)
         default: // expression
                 s = alloc(sizeof *s);
                 s->type = STATEMENT_EXPRESSION;
-                s->expression = parse_expr();
+                s->expression = parse_expr(0);
                 consume(';');
                 return s;
         }
@@ -847,10 +1055,8 @@ keyword:
         case KEYWORD_LET:      return parse_let_definition();
         case KEYWORD_BREAK:    return parse_break_statement();
         case KEYWORD_CONTINUE: return parse_continue_statement();
-        default:               error("expected statement but found %s", ""); // TODO
+        default:               error("expected statement but found %s", token_show(token));
         }
-
-        
 }
 
 char const *
@@ -871,6 +1077,9 @@ parse(struct token *tokens)
                 return NULL;
         }
 
+        while (token->type == TOKEN_KEYWORD && token->keyword == KEYWORD_IMPORT) {
+                vec_push(program, parse_import());
+        }
         while (token->type != TOKEN_END) {
                 vec_push(program, parse_statement());
         }
@@ -889,7 +1098,7 @@ parse_expression(struct token *tokens)
                 return NULL;
         }
 
-        return parse_expr();
+        return parse_expr(0);
 }
 
 TEST(break_statement)
@@ -958,19 +1167,12 @@ TEST(parenthesized_expression)
         claim(parse(lex("(((3)));")) != NULL);
 }
 
-TEST(invalid_op)
-{
-        claim(parse(lex("a <$> b;")) == NULL);
-        claim(strstr(parse_error(), "binary operator") != NULL);
-}
-
 TEST(plus_op)
 {
         struct statement *s = parse(lex("a + 4 + f();"))[0];
         claim(s->type == STATEMENT_EXPRESSION);
-        claim(s->expression->type == EXPRESSION_BINOP);
-        claim(s->expression->binop == binary_operator_addition);
-        claim(s->expression->left->type == EXPRESSION_BINOP);
+        claim(s->expression->type == EXPRESSION_PLUS);
+        claim(s->expression->left->type == EXPRESSION_PLUS);
         claim(s->expression->left->left->type == EXPRESSION_VARIABLE);
         claim(s->expression->left->right->type == EXPRESSION_INTEGER);
 }
@@ -980,20 +1182,18 @@ TEST(object_literal)
         
         struct statement *s = parse(lex("1 + {};"))[0];
         claim(s->type == STATEMENT_EXPRESSION);
-        claim(s->expression->type == EXPRESSION_BINOP);
-        claim(s->expression->binop == binary_operator_addition);
+        claim(s->expression->type == EXPRESSION_PLUS);
         claim(s->expression->right->type == EXPRESSION_OBJECT);
         claim(s->expression->right->keys.count == 0);
         claim(s->expression->right->values.count == 0);
 
         s = parse(lex("1 + {4 + 3: 'test'};"))[0];
         claim(s->type == STATEMENT_EXPRESSION);
-        claim(s->expression->type == EXPRESSION_BINOP);
-        claim(s->expression->binop == binary_operator_addition);
+        claim(s->expression->type == EXPRESSION_PLUS);
         claim(s->expression->right->type == EXPRESSION_OBJECT);
         claim(s->expression->right->keys.count == 1);
         claim(s->expression->right->values.count == 1);
-        claim(s->expression->right->keys.items[0]->type == EXPRESSION_BINOP);
+        claim(s->expression->right->keys.items[0]->type == EXPRESSION_PLUS);
         claim(s->expression->right->values.items[0]->type == EXPRESSION_STRING);
 }
 
@@ -1050,6 +1250,53 @@ TEST(let)
         claim(parse(lex("let [a, b] = [12, 14];")) != NULL);
         claim(parse(lex("let [[a1, a2], b] = [[12, 19], 14];")) != NULL);
 
-        claim(parse(lex("let a[3] = 5")) == NULL);
-        claim(strstr(parse_error(), "invalid lvalue in let assignment statement") != NULL);
+        claim(parse(lex("let a[3] = 5;")) == NULL);
+        claim(strstr(parse_error(), "failed to parse lvalue in 'let' definition") != NULL);
+}
+
+TEST(each_loop)
+{
+        struct token *ts = lex("for (a in as) print(a);");
+        claim(ts != NULL);
+
+        struct statement **p = parse(ts);
+        claim(p != NULL);
+
+        struct statement *s = p[0];
+        claim(s->type == STATEMENT_EACH_LOOP);
+        claim(s->each.array->type == EXPRESSION_VARIABLE);
+        claim(s->each.target->type == EXPRESSION_VARIABLE);
+        claim(s->each.body->type == STATEMENT_EXPRESSION);
+        claim(s->each.body->expression->type == EXPRESSION_FUNCTION_CALL);
+}
+
+TEST(arrow)
+{
+        struct token *ts = lex("let f = (a, b) -> a + b;");
+        claim(ts != NULL);
+
+        struct statement **p = parse(ts);
+        claim(p != NULL);
+
+        struct statement *s = p[0];
+        claim(s->type == STATEMENT_DEFINITION);
+        claim(s->value->type == EXPRESSION_FUNCTION);
+        claim(s->value->params.count == 2);
+        claim(s->value->body->type == STATEMENT_RETURN);
+        claim(s->value->body->return_value->type == EXPRESSION_PLUS);
+}
+
+TEST(import)
+{
+        struct token *ts = lex("import editor::buffer as buffer;");
+        claim(ts != NULL);
+
+        struct statement **p = parse(ts);
+        printf("%s\n", parse_error());
+        claim(p != NULL);
+
+        struct statement *s = p[0];
+        claim(s->type == STATEMENT_IMPORT);
+        claim(strcmp(s->import.module, "editor/buffer") == 0);
+        claim(strcmp(s->import.as, "buffer") == 0);
 }

@@ -1,6 +1,7 @@
 #include <stdio.h>
 
-#include "interpreter.h"
+#include "vm.h"
+#include "util.h"
 
 int
 main(int argc, char **argv)
@@ -10,9 +11,9 @@ main(int argc, char **argv)
                 return -1;
         }
 
-        interpreter_init();
-        if (!interpreter_execute_file(argv[1])) {
-                fprintf(stderr, "%s\n", interpreter_error());
+        vm_init();
+        if (!vm_execute(slurp(argv[1]))) {
+                fprintf(stderr, "%s\n", vm_error());
                 return -1;
         }
 

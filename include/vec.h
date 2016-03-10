@@ -21,15 +21,28 @@
         : (((v).items[(v).count++] = (item)), \
                 ((v).items + (v).count - 1)))
 
+#define vec_push_n(v, elements, n) \
+          (((v).count + (n) >= (v).capacity) \
+        ? ((resize((v).items, ((v).capacity = (((v).capacity + ((n) + 16)) * (sizeof (*(v).items))))), \
+                        (memcpy((v).items + (v).count, (elements), (n))), \
+                        ((v).count += (n)))) \
+        : ((memcpy((v).items + (v).count, (elements), (n))), \
+                ((v).count += (n))))
+
 #define vec_pop(v) \
     ((v).count == 0 ? NULL : (v).items + --(v).count)
+
+#define vec_pop_ith(v, i, out) \
+    (((out) = ((v).items)[(i)]), (memmove((v).items + (i), (v).items + (i) + 1, (--(v).count - (i)) * sizeof (*((v).items)))))
 
 #define vec_init(v) \
     (((v).capacity = 0), ((v).count = 0), ((v).items = NULL))
 
 #define vec_empty(v) \
-    ((v.capacity = 0), (v.count = 0), free(v.items), (v.items = NULL))
+    (((v).capacity = 0), ((v).count = 0), free((v).items), ((v).items = NULL))
 
 #define vec_len(v) ((v).count)
+
+#define vec_reserve(v, n) if ((v).capacity < (n)) { (v).capacity = (n); resize((v).items, (v).capacity * (sizeof (*(v).items))); }
 
 #define vec_for_each(v, idx, name) for (size_t idx = 0; ((name) = vec_get((v), idx)), idx < (v).count; ++idx)
