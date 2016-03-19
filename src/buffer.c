@@ -162,7 +162,7 @@ render(void)
         int lines_to_render = min(textbuffer_num_lines(&data) - scroll.line, lines);
         if (file.path == NULL) {
                 LOG("rendering %d lines", lines_to_render);
-                LOG("scroll = %zu\n", scroll.line);
+                LOG("scroll = %d\n", scroll.line);
         }
 
         dst = writeint(dst, lines_to_render);

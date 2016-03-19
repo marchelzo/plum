@@ -8,6 +8,7 @@
 #include <stdarg.h>
 #include <stdnoreturn.h>
 
+#include "location.h"
 #include "log.h"
 #include "alloc.h"
 #include "util.h"
@@ -18,6 +19,7 @@
 #include "test.h"
 #include "lex.h"
 #include "parse.h"
+#include "tags.h"
 #include "vm.h"
 
 #define emit_instr(i) LOG("emitting instr: %s", #i); _emit_instr(i)
@@ -35,8 +37,28 @@
         emit_instr(INSTR_JUMP); \
         emit_int(loc - state.code.count - sizeof (int));
 
+/*
+ * Flags for properties of lvalues.
+ *
+ * LV_PUB  - only applies to top-level declarations, and it means the identifiers will be exported (visible to other modules).
+ * LV_DECL - means that the lvalue is for a declaration and not an ordinary assignment.
+ * LV_NONE - just an alias for none of the above being true.
+ */
+enum {
+        LV_NONE = 0,
+        LV_DECL = 1,
+        LV_PUB  = 2,
+};
+
+// expression location
+struct eloc {
+        size_t offset;
+        struct expression const *e;
+};
+
 struct scope {
         bool function;
+        bool external;
         vec(int) func_symbols;
         vec(int) symbols;
         vec(char const *) identifiers;
@@ -72,10 +94,17 @@ struct state {
         
         offset_vector breaks;
         offset_vector continues;
+        offset_vector match_fails;
+        offset_vector match_successes;
 
         import_vector imports;
 
         struct scope *global;
+
+        char const *filename;
+        struct location loc;
+
+        vec(struct eloc) expression_locations;
 };
 
 static jmp_buf jb;
@@ -88,11 +117,16 @@ static int jumpdistance;
 static vec(struct module) modules;
 static struct state state;
 
+static symbol_vector public_symbols;
+
 static struct scope *global;
 static int global_count;
 
 static void
 symbolize_statement(struct scope *scope, struct statement *s);
+
+static void
+symbolize_pattern(struct scope *scope, struct expression *e);
 
 static void
 symbolize_expression(struct scope *scope, struct expression *e);
@@ -113,13 +147,21 @@ static struct value const nil = {
         .type = VALUE_NIL
 };
 
+static char const *tags[] = {
+        "None",
+        "Some",
+        "Ok",
+        "Err",
+};
+static size_t tagcount = sizeof tags / sizeof tags[0];
+
 noreturn static void
 fail(char const *fmt, ...)
 {
         va_list ap;
         va_start(ap, fmt);
 
-        int n = sprintf(err_buf, "Compiler error: ");
+        int n = sprintf(err_buf, "CompileError: %s:%d:%d: ", state.filename ? state.filename : "<null>", (int) state.loc.line + 1, (int) state.loc.col + 1);
         vsnprintf(err_buf + n, sizeof err_buf - n, fmt, ap);
 
         va_end(ap);
@@ -140,18 +182,121 @@ addref(int symbol)
         vec_push(state.refs, r);
 }
 
+/*
+ * Is 'symbol' publicly visible?
+ */
+static bool
+ispublic(int symbol)
+{
+        int lo = 0,
+            hi = public_symbols.count - 1;
+
+        while (lo <= hi) {
+                int m = (lo / 2) + (hi / 2) + (lo & hi & 1);
+                if (public_symbols.items[m] < symbol) {
+                        lo = m + 1;
+                } else if (public_symbols.items[m] > symbol) {
+                        hi = m - 1;
+                } else {
+                        return true;
+                }
+        }
+
+        return false;
+}
+
+inline static bool
+locallydefined(struct scope const *scope, char const *name)
+{
+        /*
+         * _ is allowed to be "re-declared".
+         */
+        if (strcmp(name, "_") == 0) {
+                return false;
+        }
+
+        for (int i = 0; i < scope->identifiers.count; ++i) {
+                if (strcmp(scope->identifiers.items[i], name) == 0) {
+                        return true;
+                }
+        }
+
+        return false;
+}
+
+inline static void
+definetag(char const *tag)
+{
+        int t = tags_new(tag);
+
+        if (locallydefined(global, tag)) {
+                fail("%s is a built-in tag and cannot be re-declared", tag);
+        }
+
+        if (locallydefined(state.global, tag)) {
+                fail("redeclaration of tag: %s", tag);
+        }
+
+        vec_push(state.global->identifiers, tag);
+        vec_push(state.global->symbols, t);
+}
+
 inline static int
-addsymbol(struct scope *scope, char const *name)
+addsymbol(struct scope *scope, char const *name, bool pub)
 {
         assert(name != NULL);
 
+        if (locallydefined(scope, name)) {
+                fail("redeclaration of variable: %s", name);
+        }
+
         vec_push(scope->identifiers, name);
         vec_push(scope->symbols, symbol);
+
         if (scope->func != NULL) {
                 vec_push(scope->func->func_symbols, symbol);
         }
+
+        if (pub) {
+                vec_push(public_symbols, symbol);
+        }
+
         LOG("adding symbol: %s -> %d", name, symbol);
         return symbol++;
+}
+
+inline static int
+getsymbol(struct scope const *scope, char const *name, bool *local)
+{
+        if (local != NULL) {
+                *local = true;
+        }
+
+        /*
+         * _ can never be used as anything but an lvalue.
+         */
+        if (strcmp(name, "_") == 0) {
+                fail("the special identifier '_' can only be used as an lvalue");
+        }
+
+        while (scope != NULL) {
+                for (int i = 0; i < scope->identifiers.count; ++i) {
+                        if (strcmp(scope->identifiers.items[i], name) == 0) {
+                                if (scope->external && !ispublic(scope->symbols.items[i])) {
+                                        fail("reference to non-public external variable: %s", name);
+                                }
+                                return scope->symbols.items[i];
+                        }
+                }
+
+                if (scope->function && local != NULL) {
+                        *local = false;
+                }
+
+                scope = scope->parent;
+        }
+
+        fail("reference to undefined variable: %s", name);
 }
 
 inline static int
@@ -162,50 +307,11 @@ tmpsymbol(int i)
 
         sprintf(idbuf, "%d", i);
 
-        for (int i = 0; i < state.global->identifiers.count; ++i) {
-                if (strcmp(state.global->identifiers.items[i], idbuf) == 0) {
-                        return state.global->symbols.items[i];
-                }
+        if (locallydefined(global, idbuf)) {
+                return getsymbol(global, idbuf, NULL);
+        } else {
+                return addsymbol(global, sclone(idbuf), false);
         }
-
-        vec_push(state.global->identifiers, sclone(idbuf));
-        vec_push(state.global->symbols, symbol);
-
-        return symbol++;
-}
-
-inline static bool
-locallydefined(struct scope const *scope, char const *name)
-{
-        for (int i = 0; i < scope->identifiers.count; ++i) {
-                if (strcmp(scope->identifiers.items[i], name) == 0) {
-                        return true;
-                }
-        }
-
-        return false;
-}
-
-inline static int
-getsymbol(struct scope const *scope, char const *name, bool *local)
-{
-        *local = true;
-
-        while (scope != NULL) {
-                for (int i = 0; i < scope->identifiers.count; ++i) {
-                        if (strcmp(scope->identifiers.items[i], name) == 0) {
-                                return scope->symbols.items[i];
-                        }
-                }
-
-                if (scope->function) {
-                        *local = false;
-                }
-
-                scope = scope->parent;
-        }
-
-        fail("reference to undefined variable: %s", name);
 }
 
 static struct scope *
@@ -216,6 +322,7 @@ newscope(struct scope *parent, bool function)
         s->function = function;
         s->parent = parent;
         s->func = (function || parent == NULL) ? s : parent->func;
+        s->external = false;
 
         vec_init(s->symbols);
         vec_init(s->identifiers);
@@ -241,6 +348,11 @@ freshstate(void)
 
         s.global = newscope(global, false);
 
+        s.filename = NULL;
+        s.loc = (struct location){ 0, 0 };
+
+        vec_init(s.expression_locations);
+
         return s;
 }
 
@@ -260,23 +372,30 @@ get_import_scope(char const *name)
 }
 
 static void
-symbolize_lvalue(struct scope *scope, struct expression *target, bool define)
+symbolize_lvalue(struct scope *scope, struct expression *target, int flags)
 {
+        state.loc = target->loc;
+
         switch (target->type) {
-        case EXPRESSION_VARIABLE:
-                if (define) {
-                        if (locallydefined(scope, target->identifier)) {
-                                fail("redeclaration of variable: %s", target->identifier);
-                        }
-                        target->symbol = addsymbol(scope, target->identifier);
+        case EXPRESSION_IDENTIFIER:
+                if (flags & LV_DECL) {
+                        target->symbol = addsymbol(scope, target->identifier, flags & LV_PUB);
                         target->local = true;
                 } else {
                         target->symbol = getsymbol(scope, target->identifier, &target->local);
                 }
                 break;
+        case EXPRESSION_TAG_APPLICATION:
+                symbolize_lvalue(scope, target->tagged, flags);
+                target->tag = getsymbol(
+                        ((target->module == NULL) ? state.global : get_import_scope(target->module)),
+                        target->identifier,
+                        NULL
+                );
+                break;
         case EXPRESSION_ARRAY:
                 for (size_t i = 0; i < target->elements.count; ++i) {
-                        symbolize_lvalue(scope, target->elements.items[i], define);
+                        symbolize_lvalue(scope, target->elements.items[i], flags);
                 }
                 break;
         case EXPRESSION_SUBSCRIPT:
@@ -290,22 +409,96 @@ symbolize_lvalue(struct scope *scope, struct expression *target, bool define)
 }
 
 static void
+symbolize_pattern(struct scope *scope, struct expression *e)
+{
+        if (e == NULL) {
+                return;
+        }
+
+        state.loc = e->loc;
+
+        switch (e->type) {
+        case EXPRESSION_IDENTIFIER:
+                e->symbol = addsymbol(scope, e->identifier, true);
+                break;
+        case EXPRESSION_ARRAY:
+                for (int i = 0; i < e->elements.count; ++i) {
+                        symbolize_pattern(scope, e->elements.items[i]);
+                }
+                break;
+        case EXPRESSION_VIEW_PATTERN:
+                symbolize_expression(scope, e->left);
+                symbolize_pattern(scope, e->right);
+                break;
+        case EXPRESSION_MATCH_REST:
+                e->symbol = addsymbol(scope, e->identifier, true);
+                break;
+        case EXPRESSION_TAG_APPLICATION:
+                e->tag = getsymbol(
+                        ((e->module == NULL) ? state.global : get_import_scope(e->module)),
+                        e->identifier,
+                        NULL
+                );
+                symbolize_pattern(scope, e->tagged);
+                break;
+        default:
+                symbolize_expression(scope, e);
+        }
+}
+
+static void
 symbolize_expression(struct scope *scope, struct expression *e)
 {
         if (e == NULL) {
                 return;
         }
 
+        state.loc = e->loc;
+
+        struct scope *subscope;
+
         switch (e->type) {
-        case EXPRESSION_VARIABLE:
-                LOG("symbolizing var: %s", e->identifier);
-                e->symbol = getsymbol(scope, e->identifier, &e->local);
+        case EXPRESSION_IDENTIFIER:
+                LOG("symbolizing var: %s%s%s", e->identifier, (e->module == NULL ? "" : e->module), (e->module == NULL ? "" : "::"));
+                e->symbol = getsymbol(
+                        ((e->module == NULL) ? scope : get_import_scope(e->module)),
+                        e->identifier,
+                        &e->local
+                );
                 LOG("var %s local", e->local ? "is" : "is NOT");
                 break;
-        case EXPRESSION_MODULE_ACCESS:
-                LOG("symbolizing var: %s::%s", e->module, e->identifier);
-                e->type = EXPRESSION_VARIABLE;
-                symbolize_expression(get_import_scope(e->module), e);
+        case EXPRESSION_SPECIAL_STRING:
+                for (int i = 0; i < e->expressions.count; ++i) {
+                        symbolize_expression(scope, e->expressions.items[i]);
+                }
+                break;
+        case EXPRESSION_RANGE:
+                symbolize_expression(scope, e->low);
+                symbolize_expression(scope, e->high);
+                break;
+        case EXPRESSION_TAG:
+                e->tag = getsymbol(
+                        ((e->module == NULL) ? state.global : get_import_scope(e->module)),
+                        e->identifier,
+                        NULL
+                );
+                break;
+        case EXPRESSION_TAG_APPLICATION:
+                e->tag = getsymbol(
+                        ((e->module == NULL) ? state.global : get_import_scope(e->module)),
+                        e->identifier,
+                        NULL
+                );
+                symbolize_expression(scope, e->tagged);
+                break;
+        case EXPRESSION_MATCH:
+                symbolize_expression(scope, e->subject);
+                for (int i = 0; i < e->patterns.count; ++i) {
+                        subscope = newscope(scope, false);
+                        symbolize_pattern(subscope, e->patterns.items[i]);
+                        symbolize_expression(subscope, e->conds.items[i]);
+                        symbolize_expression(subscope, e->thens.items[i]);
+                }
                 break;
         case EXPRESSION_PLUS:
         case EXPRESSION_MINUS:
@@ -332,6 +525,11 @@ symbolize_expression(struct scope *scope, struct expression *e)
         case EXPRESSION_POSTFIX_DEC:
                 symbolize_expression(scope, e->operand);
                 break;
+        case EXPRESSION_CONDITIONAL:
+                symbolize_expression(scope, e->cond);
+                symbolize_expression(scope, e->then);
+                symbolize_expression(scope, e->otherwise);
+                break;
         case EXPRESSION_FUNCTION_CALL:
                 symbolize_expression(scope, e->function);
                 for (size_t i = 0;  i < e->args.count; ++i) {
@@ -351,15 +549,28 @@ symbolize_expression(struct scope *scope, struct expression *e)
                         symbolize_expression(scope, e->method_args.items[i]);
                 }
                 break;
-        case EXPRESSION_ASSIGNMENT:
+        case EXPRESSION_EQ:
+        case EXPRESSION_PLUS_EQ:
+        case EXPRESSION_STAR_EQ:
+        case EXPRESSION_DIV_EQ:
+        case EXPRESSION_MINUS_EQ:
                 symbolize_expression(scope, e->value);
-                symbolize_lvalue(scope, e->target, false);
+                symbolize_lvalue(scope, e->target, LV_NONE);
                 break;
         case EXPRESSION_FUNCTION:
-                vec_init(e->param_symbols);
+
+                if (e->name != NULL) {
+                        scope = newscope(scope, false);
+                        e->function_symbol = addsymbol(scope, e->name, false);
+                } else {
+                        e->function_symbol = -1;
+                }
+
                 scope = newscope(scope, true);
+
+                vec_init(e->param_symbols);
                 for (size_t i = 0; i < e->params.count; ++i) {
-                        vec_push(e->param_symbols, addsymbol(scope, e->params.items[i]));
+                        vec_push(e->param_symbols, addsymbol(scope, e->params.items[i], false));
                 }
                 symbolize_statement(scope, e->body);
 
@@ -388,6 +599,10 @@ symbolize_statement(struct scope *scope, struct statement *s)
                 return;
         }
 
+        state.loc = s->loc;
+
+        struct scope *subscope;
+
         switch (s->type) {
         case STATEMENT_IMPORT:
                 import_module(s->import.module, s->import.as);
@@ -395,11 +610,37 @@ symbolize_statement(struct scope *scope, struct statement *s)
         case STATEMENT_EXPRESSION:
                 symbolize_expression(scope, s->expression);
                 break;
+        case STATEMENT_TAG_DEFINITION:
+                definetag(s->tag);
+                break;
         case STATEMENT_BLOCK:
                 scope = newscope(scope, false);
                 for (size_t i = 0; i < s->statements.count; ++i) {
                         symbolize_statement(scope, s->statements.items[i]);
                 }
+                break;
+        case STATEMENT_MATCH:
+        case STATEMENT_WHILE_MATCH:
+                symbolize_expression(scope, s->match.e);
+                for (int i = 0; i < s->match.patterns.count; ++i) {
+                        subscope = newscope(scope, false);
+                        symbolize_pattern(subscope, s->match.patterns.items[i]);
+                        symbolize_expression(subscope, s->match.conds.items[i]);
+                        symbolize_statement(subscope, s->match.statements.items[i]);
+                }
+                break;
+        case STATEMENT_WHILE_LET:
+                symbolize_expression(scope, s->while_let.e);
+                subscope = newscope(scope, false);
+                symbolize_pattern(subscope, s->while_let.pattern);
+                symbolize_statement(subscope, s->while_let.block);
+                break;
+        case STATEMENT_IF_LET:
+                symbolize_expression(scope, s->if_let.e);
+                subscope = newscope(scope, false);
+                symbolize_pattern(subscope, s->if_let.pattern);
+                symbolize_statement(subscope, s->if_let.then);
+                symbolize_statement(scope, s->if_let.otherwise); // note that this is not done in the subscope
                 break;
         case STATEMENT_FOR_LOOP:
                 scope = newscope(scope, false);
@@ -410,7 +651,7 @@ symbolize_statement(struct scope *scope, struct statement *s)
                 break;
         case STATEMENT_EACH_LOOP:
                 scope = newscope(scope, false);
-                symbolize_lvalue(scope, s->each.target, true);
+                symbolize_lvalue(scope, s->each.target, LV_DECL);
                 symbolize_expression(scope, s->each.array);
                 symbolize_statement(scope, s->each.body);
                 break;
@@ -427,24 +668,26 @@ symbolize_statement(struct scope *scope, struct statement *s)
                 symbolize_expression(scope, s->return_value);
                 break;
         case STATEMENT_DEFINITION:
-                symbolize_lvalue(scope, s->target, true);
                 symbolize_expression(scope, s->value);
+                symbolize_lvalue(scope, s->target, (LV_DECL | (LV_PUB * s->pub)));
                 break;
+        }
+}
+
+static void
+patch_jumps_to(offset_vector const *js, size_t location)
+{
+        for (int i = 0; i < js->count; ++i) {
+                int distance = location - js->items[i] - sizeof (int);
+                memcpy(state.code.items + js->items[i], &distance, sizeof distance);
         }
 }
 
 static void
 patch_loop_jumps(size_t begin, size_t end)
 {
-        for (int i = 0; i < state.continues.count; ++i) {
-                int distance = begin - state.continues.items[i] - sizeof (int);
-                memcpy(state.code.items + state.continues.items[i], &distance, sizeof distance);
-        }
-
-        for (int i = 0; i < state.breaks.count; ++i) {
-                int distance = end - state.breaks.items[i] - sizeof (int);
-                memcpy(state.code.items + state.breaks.items[i], &distance, sizeof distance);
-        }
+        patch_jumps_to(&state.continues, begin);
+        patch_jumps_to(&state.breaks, end);
 }
 
 inline static void
@@ -585,13 +828,19 @@ emit_function(struct expression const *e)
 
         state.refs = refs_save;
         state.bound_symbols = syms_save;
+
+        if (e->function_symbol != -1) {
+                emit_instr(INSTR_TARGET_VAR);
+                emit_symbol(e->function_symbol);
+                emit_instr(INSTR_ASSIGN);
+        }
 }
 
 static void
-emit_conditional(struct statement const *s)
+emit_conditional_statement(struct statement const *s)
 {
         emit_expression(s->conditional.cond);
-        PLACEHOLDER_JUMP(INSTR_COND_JUMP, then_branch);
+        PLACEHOLDER_JUMP(INSTR_JUMP_IF, then_branch);
 
         if (s->conditional.else_branch != NULL) {
                 emit_statement(s->conditional.else_branch);
@@ -607,15 +856,33 @@ emit_conditional(struct statement const *s)
 }
 
 static void
+emit_conditional_expression(struct expression const *e)
+{
+        emit_expression(e->cond);
+
+        PLACEHOLDER_JUMP(INSTR_JUMP_IF_NOT, false_branch);
+
+        emit_expression(e->then);
+
+        PLACEHOLDER_JUMP(INSTR_JUMP, end);
+
+        PATCH_JUMP(false_branch);
+
+        emit_expression(e->otherwise);
+
+        PATCH_JUMP(end);
+}
+
+static void
 emit_and(struct expression const *left, struct expression const *right)
 {
         emit_expression(left);
         emit_instr(INSTR_DUP);
 
-        PLACEHOLDER_JUMP(INSTR_NCOND_JUMP, left_false);
+        PLACEHOLDER_JUMP(INSTR_JUMP_IF_NOT, left_false);
 
+        emit_instr(INSTR_POP);
         emit_expression(right);
-        emit_instr(INSTR_AND);
 
         PATCH_JUMP(left_false);
 }
@@ -626,12 +893,29 @@ emit_or(struct expression const *left, struct expression const *right)
         emit_expression(left);
         emit_instr(INSTR_DUP);
 
-        PLACEHOLDER_JUMP(INSTR_COND_JUMP, left_true);
+        PLACEHOLDER_JUMP(INSTR_JUMP_IF, left_true);
 
+        emit_instr(INSTR_POP);
         emit_expression(right);
-        emit_instr(INSTR_OR);
 
         PATCH_JUMP(left_true);
+}
+
+static void
+emit_special_string(struct expression const *e)
+{
+        emit_instr(INSTR_STRING);
+        emit_string(e->strings.items[0]);
+
+        for (int i = 0; i < e->expressions.count; ++i) {
+                emit_expression(e->expressions.items[i]);
+                emit_instr(INSTR_TO_STRING);
+                emit_instr(INSTR_STRING);
+                emit_string(e->strings.items[i + 1]);
+        }
+
+        emit_instr(INSTR_CONCAT_STRINGS);
+        emit_int(2 * e->expressions.count + 1);
 }
 
 static void
@@ -645,7 +929,7 @@ emit_while_loop(struct statement const *s)
         size_t begin = state.code.count;
 
         emit_expression(s->while_loop.cond);
-        PLACEHOLDER_JUMP(INSTR_NCOND_JUMP, end);
+        PLACEHOLDER_JUMP(INSTR_JUMP_IF_NOT, end);
 
         emit_statement(s->while_loop.body);
 
@@ -681,7 +965,7 @@ emit_for_loop(struct statement const *s)
         PATCH_JUMP(skip_next);
 
         emit_expression(s->for_loop.cond);
-        PLACEHOLDER_JUMP(INSTR_NCOND_JUMP, end_jump);
+        PLACEHOLDER_JUMP(INSTR_JUMP_IF_NOT, end_jump);
 
         emit_statement(s->for_loop.body);
 
@@ -693,6 +977,323 @@ emit_for_loop(struct statement const *s)
 
         state.continues = cont_save;
         state.breaks = brk_save;
+}
+
+static void
+emit_try_match(struct expression const *pattern)
+{
+        switch (pattern->type) {
+        case EXPRESSION_IDENTIFIER:
+                /*
+                 * The special identifier '_' matches anything, even nil. Ordinary identifiers will _not_
+                 * match nil.
+                 */
+                if (strcmp(pattern->identifier, "_") == 0) {
+                        /* nothing to do */
+                } else {
+                        emit_instr(INSTR_TRY_ASSIGN_NON_NIL);
+                        emit_symbol(pattern->symbol);
+                        vec_push(state.match_fails, state.code.count);
+                        emit_int(0);
+                }
+                break;
+        case EXPRESSION_VIEW_PATTERN:
+                emit_instr(INSTR_DUP);
+                emit_expression(pattern->left);
+                emit_instr(INSTR_CALL);
+                emit_int(1);
+                emit_try_match(pattern->right);
+                break;
+        case EXPRESSION_ARRAY:
+                for (int i = 0; i < pattern->elements.count; ++i) {
+                        if (pattern->elements.items[i]->type == EXPRESSION_MATCH_REST) {
+                                emit_instr(INSTR_ARRAY_REST);
+                                emit_symbol(pattern->elements.items[i]->symbol);
+                                emit_int(i);
+                                vec_push(state.match_fails, state.code.count);
+                                emit_int(0);
+
+                                if (i + 1 != pattern->elements.count) {
+                                        fail("the *<id> array-matching pattern must be the last pattern in the array");
+                                }
+                        } else {
+                                emit_instr(INSTR_TRY_INDEX);
+                                emit_int(i);
+                                vec_push(state.match_fails, state.code.count);
+                                emit_int(0);
+
+                                emit_try_match(pattern->elements.items[i]);
+
+                                emit_instr(INSTR_POP);
+                        }
+                }
+
+                if (pattern->elements.items[pattern->elements.count - 1]->type != EXPRESSION_MATCH_REST) {
+                        emit_instr(INSTR_ENSURE_LEN);
+                        emit_int(pattern->elements.count);
+                        vec_push(state.match_fails, state.code.count);
+                        emit_int(0);
+                }
+
+                break;
+        case EXPRESSION_TAG_APPLICATION:
+                emit_instr(INSTR_DUP);
+                emit_instr(INSTR_TRY_TAG_POP);
+                emit_int(pattern->tag);
+                vec_push(state.match_fails, state.code.count);
+                emit_int(0);
+
+                emit_try_match(pattern->tagged);
+
+                emit_instr(INSTR_POP);
+                break;
+        case EXPRESSION_REGEX:
+                emit_instr(INSTR_TRY_REGEX);
+                emit_symbol((uintptr_t) pattern->regex);
+                emit_symbol((uintptr_t) pattern->extra);
+                vec_push(state.match_fails, state.code.count);
+                emit_int(0);
+                break;
+        default:
+                emit_instr(INSTR_DUP);
+                emit_expression(pattern);
+                emit_instr(INSTR_EQ);
+                emit_instr(INSTR_JUMP_IF_NOT);
+                vec_push(state.match_fails, state.code.count);
+                emit_int(0);
+        }
+}
+
+static void
+emit_case(struct expression const *pattern, struct expression const *condition, struct statement const *s)
+{
+        offset_vector fails_save = state.match_fails;
+        vec_init(state.match_fails);
+        
+        emit_instr(INSTR_SAVE_STACK_POS);
+        emit_try_match(pattern);
+
+        size_t failcond;
+        if (condition != NULL) {
+                emit_expression(condition);
+                emit_instr(INSTR_JUMP_IF_NOT);
+                failcond = state.code.count;
+                emit_int(0);
+        }
+
+        emit_instr(INSTR_RESTORE_STACK_POS);
+
+        emit_statement(s);
+
+        emit_instr(INSTR_JUMP);
+        vec_push(state.match_successes, state.code.count);
+        emit_int(0);
+
+        if (condition != NULL) {
+                PATCH_JUMP(failcond);
+        }
+
+        emit_instr(INSTR_RESTORE_STACK_POS);
+        patch_jumps_to(&state.match_fails, state.code.count);
+
+        state.match_fails = fails_save;
+}
+
+static void
+emit_expression_case(struct expression const *pattern, struct expression const *condition, struct expression const *e)
+{
+        offset_vector fails_save = state.match_fails;
+        vec_init(state.match_fails);
+        
+        emit_instr(INSTR_SAVE_STACK_POS);
+        emit_try_match(pattern);
+
+        size_t failcond;
+        if (condition != NULL) {
+                emit_expression(condition);
+                emit_instr(INSTR_JUMP_IF_NOT);
+                failcond = state.code.count;
+                emit_int(0);
+        }
+
+        /*
+         * Go back to where the subject of the match is on top of the stack,
+         * then pop it and execute the code to produce the result of this branch.
+         */
+        emit_instr(INSTR_RESTORE_STACK_POS);
+        emit_instr(INSTR_POP);
+        emit_expression(e);
+
+        /*
+         * We've successfully matched a pattern+condition and produced a result, so we jump
+         * to the end of the match expression. i.e., there is no fallthrough.
+         */
+        emit_instr(INSTR_JUMP);
+        vec_push(state.match_successes, state.code.count);
+        emit_int(0);
+
+        if (condition != NULL) {
+                PATCH_JUMP(failcond);
+        }
+
+        patch_jumps_to(&state.match_fails, state.code.count);
+        emit_instr(INSTR_RESTORE_STACK_POS);
+
+        state.match_fails = fails_save;
+}
+
+static void
+emit_match_statement(struct statement const *s)
+{
+        offset_vector successes_save = state.match_successes;
+        vec_init(state.match_successes);
+
+        emit_expression(s->match.e);
+
+        for (int i = 0; i < s->match.patterns.count; ++i) {
+                LOG("emitting case %d", i + 1);
+                emit_case(s->match.patterns.items[i], s->match.conds.items[i], s->match.statements.items[i]);
+        }
+
+        /*
+         * Nothing matched. This is a runtime errror.
+         */
+        emit_instr(INSTR_BAD_MATCH);
+
+        patch_jumps_to(&state.match_successes, state.code.count);
+
+        emit_instr(INSTR_POP);
+
+        state.match_successes = successes_save;
+}
+
+static void
+emit_while_match(struct statement const *s)
+{
+        offset_vector brk_save = state.breaks;
+        offset_vector cont_save = state.continues;
+        offset_vector successes_save = state.match_successes;
+        vec_init(state.breaks);
+        vec_init(state.continues);
+        vec_init(state.match_successes);
+
+        size_t begin = state.code.count;
+
+        emit_expression(s->match.e);
+
+        for (int i = 0; i < s->match.patterns.count; ++i) {
+                LOG("emitting case %d", i + 1);
+                emit_case(s->match.patterns.items[i], s->match.conds.items[i], s->match.statements.items[i]);
+        }
+
+        /*
+         * If nothing matches, we jump out of the loop.
+         */
+        PLACEHOLDER_JUMP(INSTR_JUMP, finished);
+
+        patch_jumps_to(&state.match_successes, state.code.count);
+
+        /*
+         * Something matched, so we iterate again.
+         */
+        JUMP(begin);
+
+        PATCH_JUMP(finished);
+        patch_loop_jumps(begin, state.code.count);
+
+        emit_instr(INSTR_POP);
+
+        state.match_successes = successes_save;
+        state.breaks = brk_save;
+        state.continues = cont_save;
+}
+
+static void
+emit_while_let(struct statement const *s)
+{
+        offset_vector brk_save = state.breaks;
+        offset_vector cont_save = state.continues;
+        offset_vector successes_save = state.match_successes;
+        vec_init(state.breaks);
+        vec_init(state.continues);
+        vec_init(state.match_successes);
+
+        size_t begin = state.code.count;
+
+        emit_expression(s->while_let.e);
+
+        emit_case(s->while_let.pattern, NULL, s->while_let.block);
+
+        /*
+         * We failed to match, so we jump out.
+         */
+        PLACEHOLDER_JUMP(INSTR_JUMP, finished);
+
+        patch_jumps_to(&state.match_successes, state.code.count);
+
+        /*
+         * We matched, so we iterate again.
+         */
+        emit_instr(INSTR_POP);
+        JUMP(begin);
+
+        PATCH_JUMP(finished);
+        patch_loop_jumps(begin, state.code.count);
+
+        emit_instr(INSTR_POP);
+
+        state.match_successes = successes_save;
+        state.breaks = brk_save;
+        state.continues = cont_save;
+}
+
+static void
+emit_if_let(struct statement const *s)
+{
+        offset_vector successes_save = state.match_successes;
+        vec_init(state.match_successes);
+
+        emit_expression(s->if_let.e);
+
+        emit_case(s->if_let.pattern, NULL, s->if_let.then);
+
+        if (s->if_let.otherwise != NULL) {
+                emit_statement(s->if_let.otherwise);
+        }
+
+        patch_jumps_to(&state.match_successes, state.code.count);
+
+        emit_instr(INSTR_POP);
+
+        state.match_successes = successes_save;
+}
+
+static void
+emit_match_expression(struct expression const *e)
+{
+        offset_vector successes_save = state.match_successes;
+        vec_init(state.match_successes);
+
+        emit_expression(e->subject);
+
+        for (int i = 0; i < e->patterns.count; ++i) {
+                LOG("emitting case %d", i + 1);
+                emit_expression_case(e->patterns.items[i], e->conds.items[i], e->thens.items[i]);
+        }
+
+        /*
+         * Nothing matched. This is a runtime errror.
+         */
+        emit_instr(INSTR_BAD_MATCH);
+
+        /*
+         * If a branch matched successfully, it will jump to this point
+         * after it is evaluated so as not to fallthrough to the other
+         * branches.
+         */
+        patch_jumps_to(&state.match_successes, state.code.count);
+
+        state.match_successes = successes_save;
 }
 
 static void
@@ -740,10 +1341,10 @@ emit_each_loop(struct statement const *s)
         emit_instr(INSTR_LEN);
         emit_instr(INSTR_LT);
 
-        PLACEHOLDER_JUMP(INSTR_NCOND_JUMP, end);
+        PLACEHOLDER_JUMP(INSTR_JUMP_IF_NOT, end);
 
-        struct expression array = { .type = EXPRESSION_VARIABLE, .symbol = array_sym, .local = true };
-        struct expression index = { .type = EXPRESSION_VARIABLE, .symbol = counter_sym, .local = true };
+        struct expression array = { .type = EXPRESSION_IDENTIFIER, .symbol = array_sym, .local = true };
+        struct expression index = { .type = EXPRESSION_IDENTIFIER, .symbol = counter_sym, .local = true };
         struct expression subscript = { .type = EXPRESSION_SUBSCRIPT, .container = &array, .subscript = &index };
         emit_assignment(s->each.target, &subscript, 2);
         emit_instr(INSTR_POP);
@@ -763,7 +1364,7 @@ static void
 emit_target(struct expression *target)
 {
         switch (target->type) {
-        case EXPRESSION_VARIABLE:
+        case EXPRESSION_IDENTIFIER:
                 if (target->local) {
                         emit_instr(INSTR_TARGET_VAR);
                 } else {
@@ -802,7 +1403,7 @@ emit_assignment(struct expression *target, struct expression const *e, int i)
                 emit_instr(INSTR_TARGET_VAR);
                 emit_symbol(tmp);
                 emit_instr(INSTR_ASSIGN);
-                container = (struct expression){ .type = EXPRESSION_VARIABLE, .symbol = tmp, .local = true };
+                container = (struct expression){ .type = EXPRESSION_IDENTIFIER, .symbol = tmp, .local = true };
                 for (int j = 0; j < target->elements.count; ++j) {
                         subscript = (struct expression){ .type = EXPRESSION_INTEGER, .integer = j };
                         emit_assignment(target->elements.items[j], &(struct expression){ .type = EXPRESSION_SUBSCRIPT, .container = &container, .subscript = &subscript }, i + 1);
@@ -810,6 +1411,13 @@ emit_assignment(struct expression *target, struct expression const *e, int i)
                 }
                 emit_instr(INSTR_POP_VAR);
                 emit_symbol(tmp);
+                break;
+        case EXPRESSION_TAG_APPLICATION:
+                emit_expression(e);
+                emit_instr(INSTR_UNTAG_OR_DIE);
+                emit_int(target->tag);
+                emit_target(target->tagged);
+                emit_instr(INSTR_ASSIGN);
                 break;
         default:
                 emit_expression(e);
@@ -821,8 +1429,13 @@ emit_assignment(struct expression *target, struct expression const *e, int i)
 static void
 emit_expression(struct expression const *e)
 {
+        state.loc = e->loc;
+        LOG("adding eloc with offset %zu\n", state.code.count);
+        LOG("location is: (%d, %d)", e->loc.line + 1, e->loc.col + 1);
+        vec_push(state.expression_locations, ((struct eloc){ .offset = state.code.count, .e = e }));
+
         switch (e->type) {
-        case EXPRESSION_VARIABLE:
+        case EXPRESSION_IDENTIFIER:
                 if (e->local) {
                         emit_instr(INSTR_LOAD_VAR);
                 } else {
@@ -831,7 +1444,22 @@ emit_expression(struct expression const *e)
                 }
                 emit_symbol(e->symbol);
                 break;
-        case EXPRESSION_ASSIGNMENT:
+        case EXPRESSION_MATCH:
+                emit_match_expression(e);
+                break;
+        case EXPRESSION_TAG_APPLICATION:
+                emit_expression(e->tagged);
+                emit_instr(INSTR_TAG_PUSH);
+                emit_int(e->tag);
+                break;
+        case EXPRESSION_RANGE:
+                emit_expression(e->low);
+                emit_expression(e->high);
+                emit_instr(INSTR_RANGE);
+                emit_int((e->flags & RANGE_EXCLUDE_LEFT) ? 1 : 0);
+                emit_int((e->flags & RANGE_EXCLUDE_RIGHT) ? -1 : 0);
+                break;
+        case EXPRESSION_EQ:
                 emit_assignment(e->target, e->value, 0);
                 break;
         case EXPRESSION_INTEGER:
@@ -849,6 +1477,19 @@ emit_expression(struct expression const *e)
         case EXPRESSION_STRING:
                 emit_instr(INSTR_STRING);
                 emit_string(e->string);
+                break;
+        case EXPRESSION_SPECIAL_STRING:
+                emit_special_string(e);
+                break;
+        case EXPRESSION_TAG:
+                emit_instr(INSTR_TAG);
+                emit_int(e->tag);
+                break;
+        case EXPRESSION_REGEX:
+                emit_instr(INSTR_REGEX);
+                emit_symbol((uintptr_t) e->regex);
+                emit_symbol((uintptr_t) e->extra);
+                emit_symbol((uintptr_t) e->pattern);
                 break;
         case EXPRESSION_ARRAY:
                 for (int i = e->elements.count - 1; i >= 0; --i) {
@@ -898,6 +1539,9 @@ emit_expression(struct expression const *e)
         case EXPRESSION_FUNCTION:
                 emit_instr(INSTR_FUNCTION);
                 emit_function(e);
+                break;
+        case EXPRESSION_CONDITIONAL:
+                emit_conditional_expression(e);
                 break;
         case EXPRESSION_PLUS:
                 emit_expression(e->left);
@@ -988,20 +1632,45 @@ emit_expression(struct expression const *e)
                 emit_target(e->operand);
                 emit_instr(INSTR_POST_DEC);
                 break;
+        case EXPRESSION_PLUS_EQ:
+                emit_target(e->target);
+                emit_expression(e->value);
+                emit_instr(INSTR_MUT_ADD);
+                break;
+        case EXPRESSION_STAR_EQ:
+                emit_target(e->target);
+                emit_expression(e->value);
+                emit_instr(INSTR_MUT_MUL);
+                break;
+        case EXPRESSION_DIV_EQ:
+                emit_target(e->target);
+                emit_expression(e->value);
+                emit_instr(INSTR_MUT_DIV);
+                break;
+        case EXPRESSION_MINUS_EQ:
+                emit_target(e->target);
+                emit_expression(e->value);
+                emit_instr(INSTR_MUT_SUB);
+                break;
         }
 }
 
 static void
 emit_statement(struct statement const *s)
 {
+        state.loc = s->loc;
+
         switch (s->type) {
         case STATEMENT_BLOCK:
                 for (int i = 0; i < s->statements.count; ++i) {
                         emit_statement(s->statements.items[i]);
                 }
                 break;
+        case STATEMENT_MATCH:
+                emit_match_statement(s);
+                break;
         case STATEMENT_CONDITIONAL:
-                emit_conditional(s);
+                emit_conditional_statement(s);
                 break;
         case STATEMENT_FOR_LOOP:
                 emit_for_loop(s);
@@ -1011,6 +1680,15 @@ emit_statement(struct statement const *s)
                 break;
         case STATEMENT_WHILE_LOOP:
                 emit_while_loop(s);
+                break;
+        case STATEMENT_WHILE_MATCH:
+                emit_while_match(s);
+                break;
+        case STATEMENT_WHILE_LET:
+                emit_while_let(s);
+                break;
+        case STATEMENT_IF_LET:
+                emit_if_let(s);
                 break;
         case STATEMENT_EXPRESSION:
                 emit_expression(s->expression);
@@ -1122,12 +1800,7 @@ import_module(char *name, char *as)
                 fail("failed to read file: %s", pathbuf);
         }
 
-        struct token *ts = lex(source);
-        if (ts == NULL) {
-                fail("while importing module %s: %s", name, lex_error());
-        }
-
-        struct statement **p = parse(ts);
+        struct statement **p = parse(source);
         if (p == NULL) {
                 fail("while importing module %s: %s", name, parse_error());
         }
@@ -1152,6 +1825,11 @@ import_module(char *name, char *as)
         emit_instr(INSTR_HALT);
 
         module_scope = state.global;
+        
+        /*
+         * Mark it as external so that only public symbols can be used by other modules.
+         */
+        module_scope->external = true;
 
         struct module m = {
                 .path = name,
@@ -1185,6 +1863,13 @@ compiler_init(void)
         builtin_count = 0;
         global_count = 0;
         global = newscope(NULL, false);
+        vec_init(public_symbols);
+
+        tags_init();
+        for (int i = 0; i < tagcount; ++i) {
+                vec_push(global->identifiers, tags[i]);
+                vec_push(global->symbols, tags_new(tags[i]));
+        }
 
         state = freshstate();
 }
@@ -1192,25 +1877,21 @@ compiler_init(void)
 void
 compiler_introduce_symbol(char const *name)
 {
-        addsymbol(global, name);
+        addsymbol(global, name, false);
         builtin_count += 1;
 }
 
 char *
-compiler_compile_source(char const *source, int *symbols)
+compiler_compile_source(char const *source, int *symbols, char const *filename)
 {
         vec_init(state.code);
         vec_init(state.refs);
 
+        state.filename = filename;
+
         symbol = *symbols;
 
-        struct token *ts = lex(source);
-        if (ts == NULL) {
-                err_msg = lex_error();
-                return NULL;
-        }
-
-        struct statement **p = parse(ts);
+        struct statement **p = parse(source);
         if (p == NULL) {
                 err_msg = parse_error();
                 return NULL;
@@ -1236,4 +1917,28 @@ compiler_compile_source(char const *source, int *symbols)
 
         *symbols = symbol;
         return state.code.items;
+}
+
+struct location
+compiler_get_location(char const *code)
+{
+        int lo = 0,
+            hi = state.expression_locations.count - 1;
+
+        struct eloc *elocs = state.expression_locations.items;
+
+        size_t offset = code - state.code.items;
+
+        while (lo <= hi) {
+                int m = (lo / 2) + (hi / 2) + (lo & hi & 1);
+                if      (offset < elocs[m].offset) hi = m - 1;
+                else if (offset > elocs[m].offset) lo = m + 1;
+                else                               break;
+        }
+
+        while (lo >= state.expression_locations.count || elocs[lo].offset >= offset) {
+                --lo;
+        }
+
+        return elocs[lo].e->loc;
 }

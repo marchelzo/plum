@@ -12,7 +12,7 @@ main(int argc, char **argv)
         }
 
         vm_init();
-        if (!vm_execute(slurp(argv[1]))) {
+        if (!vm_execute_file(argv[1])) {
                 fprintf(stderr, "%s\n", vm_error());
                 return -1;
         }

@@ -22,6 +22,8 @@ gc_alloc(size_t n)
                 return mem;
         }
 
+        LOG("doing gc...");
+
         vm_mark();        
 
         object_sweep();
@@ -30,6 +32,8 @@ gc_alloc(size_t n)
         vm_sweep_variables();
 
         allocated = 0;
+
+        LOG("done gc...");
 
         return mem;
 }

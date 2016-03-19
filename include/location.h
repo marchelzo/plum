@@ -2,8 +2,8 @@
 #define LOCATION_H_INCLUDED
 
 struct location {
-        size_t line;
-        size_t col;
+        int line;
+        int col;
 };
 
 #endif

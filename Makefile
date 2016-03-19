@@ -3,9 +3,10 @@ CFLAGS = -std=c11
 CFLAGS += -Wall
 CFLAGS += -pedantic
 CFLAGS += -Iinclude
-CFLAGS += -g3
+CFLAGS += -ggdb3
 CFLAGS += -ltickit
 CFLAGS += -lncurses
+CFLAGS += $(shell pcre-config --libs)
 CFLAGS += -Wno-switch
 
 TEST_FILTER ?= "."
@@ -17,7 +18,8 @@ ifndef RELEASE
         CFLAGS += -fsanitize=leak
         CFLAGS += -O0
 else
-        CFLAGS += -O3
+	CFLAGS += -flto
+        CFLAGS += -Ofast
         CFLAGS += -DPLUM_RELEASE
 endif
 

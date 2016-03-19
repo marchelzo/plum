@@ -9,6 +9,7 @@
 #include "test.h"
 #include "util.h"
 #include "object.h"
+#include "tags.h"
 #include "log.h"
 #include "gc.h"
 #include "vm.h"
@@ -17,31 +18,7 @@ static struct value_array *array_chain;
 static struct ref_vector *ref_vector_chain;
 
 static bool
-equality_test_string(struct value const *v1, struct value const *v2)
-{
-        return strcmp(v1->string, v2->string) == 0;
-}
-
-static bool
-equality_test_integer(struct value const *v1, struct value const *v2)
-{
-        return v1->integer == v2->integer;
-}
-
-static bool
-equality_test_real(struct value const *v1, struct value const *v2)
-{
-        return v1->real == v2->real;
-}
-
-static bool
-equality_test_boolean(struct value const *v1, struct value const *v2)
-{
-        return v1->boolean == v2->boolean;
-}
-
-static bool
-equality_test_array(struct value const *v1, struct value const *v2)
+arrays_equal(struct value const *v1, struct value const *v2)
 {
         if (v1->array->count != v2->array->count) {
                 return false;
@@ -58,45 +35,59 @@ equality_test_array(struct value const *v1, struct value const *v2)
         return true;
 }
 
-static bool
-equality_test_object(struct value const *v1, struct value const *v2)
+inline static bool
+bytes_equal(char const *s1, char const *s2, int count)
 {
-        return v1->object == v2->object;
-}
+        register int n = (count + 31) / 32;
+        switch (count % 32) {
+                do {
+                case 0:  if (*s1++ != *s2++) return false;
+                case 31: if (*s1++ != *s2++) return false;
+                case 30: if (*s1++ != *s2++) return false;
+                case 29: if (*s1++ != *s2++) return false;
+                case 28: if (*s1++ != *s2++) return false;
+                case 27: if (*s1++ != *s2++) return false;
+                case 26: if (*s1++ != *s2++) return false;
+                case 25: if (*s1++ != *s2++) return false;
+                case 24: if (*s1++ != *s2++) return false;
+                case 23: if (*s1++ != *s2++) return false;
+                case 22: if (*s1++ != *s2++) return false;
+                case 21: if (*s1++ != *s2++) return false;
+                case 20: if (*s1++ != *s2++) return false;
+                case 19: if (*s1++ != *s2++) return false;
+                case 18: if (*s1++ != *s2++) return false;
+                case 17: if (*s1++ != *s2++) return false;
+                case 16: if (*s1++ != *s2++) return false;
+                case 15: if (*s1++ != *s2++) return false;
+                case 14: if (*s1++ != *s2++) return false;
+                case 13: if (*s1++ != *s2++) return false;
+                case 12: if (*s1++ != *s2++) return false;
+                case 11: if (*s1++ != *s2++) return false;
+                case 10: if (*s1++ != *s2++) return false;
+                case 9:  if (*s1++ != *s2++) return false;
+                case 8:  if (*s1++ != *s2++) return false;
+                case 7:  if (*s1++ != *s2++) return false;
+                case 6:  if (*s1++ != *s2++) return false;
+                case 5:  if (*s1++ != *s2++) return false;
+                case 4:  if (*s1++ != *s2++) return false;
+                case 3:  if (*s1++ != *s2++) return false;
+                case 2:  if (*s1++ != *s2++) return false;
+                case 1:  if (*s1++ != *s2++) return false;
+                } while (--n > 0);
+        }
 
-static bool
-equality_test_function(struct value const *v1, struct value const *v2)
-{
-        return v1->code == v2->code;
-}
-
-static bool
-equality_test_nil(struct value const *v1, struct value const *v2)
-{
         return true;
 }
-
-bool (*equality_tests[])(struct value const *, struct value const *) = {
-        [VALUE_STRING]   = equality_test_string,
-        [VALUE_ARRAY]    = equality_test_array,
-        [VALUE_INTEGER]  = equality_test_integer,
-        [VALUE_REAL]     = equality_test_real,
-        [VALUE_OBJECT]   = equality_test_object,
-        [VALUE_BOOLEAN]  = equality_test_boolean,
-        [VALUE_FUNCTION] = equality_test_function,
-        [VALUE_NIL]      = equality_test_nil
-};
 
 // These hash functions are based on djb's djb2 hash function, copied from http://www.cse.yorku.ca/~oz/hash.html
 
 static unsigned long
-str_hash(char const *str)
+str_hash(char const *str, register int n)
 {
         unsigned long hash = 5381;
-        int c;
 
-        while ((c = *str++)) {
-                hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+        while (n > 0) {
+                hash = ((hash << 5) + hash) + str[--n]; /* hash * 33 + c */
         }
 
         return hash;
@@ -166,12 +157,13 @@ value_hash(struct value const *val)
         switch (val->type) {
         case VALUE_NIL:       return 1;
         case VALUE_BOOLEAN:   return val->boolean ? 2 : 3;
-        case VALUE_STRING:    return str_hash(val->string);
+        case VALUE_STRING:    return str_hash(val->string, val->bytes);
         case VALUE_INTEGER:   return int_hash(val->integer);
         case VALUE_REAL:      return flt_hash(val->real);
         case VALUE_ARRAY:     return ary_hash(val);
         case VALUE_OBJECT:    return ptr_hash(val->object);
         case VALUE_FUNCTION:  return ptr_hash(val->code);
+        case VALUE_REGEX:     return ptr_hash(val->regex);
         }
 
         assert(false);
@@ -215,18 +207,18 @@ show_array(struct value const *a)
 }
 
 static char *
-show_string(char const *s)
+show_string(char const *s, size_t n)
 {
         vec(char) v;
         vec_init(v);
 
         vec_push(v, '\'');
 
-        while (*s) {
-                if (*s == '\'') {
+        for (char const *c = s; c < s + n;) {
+                if (*c == '\'') {
                         vec_push(v, '\\');
                 }
-                vec_push(v, *s++);
+                vec_push(v, *c++);
         }
 
         vec_push(v, '\'');
@@ -239,16 +231,18 @@ char *
 value_show(struct value const *v)
 {
         static char buffer[1024];
+        char const *s = buffer;
 
-        switch (v->type) {
+        switch (v->type & ~VALUE_TAGGED) {
         case VALUE_INTEGER:
                 snprintf(buffer, 1024, "%"PRIiMAX, v->integer);
                 break;
         case VALUE_REAL:
-                snprintf(buffer, 1024, "%f", v->real);
+                snprintf(buffer, 1024, "%g", v->real);
                 break;
         case VALUE_STRING:
-                return show_string(v->string);
+                s = show_string(v->string, v->bytes);
+                break;
         case VALUE_BOOLEAN:
                 snprintf(buffer, 1024, "%s", v->boolean ? "true" : "false");
                 break;
@@ -256,7 +250,11 @@ value_show(struct value const *v)
                 snprintf(buffer, 1024, "%s", "nil");
                 break;
         case VALUE_ARRAY:
-                return show_array(v);
+                s = show_array(v);
+                break;
+        case VALUE_REGEX:
+                snprintf(buffer, 1024, "/%s/", v->pattern);
+                break;
         case VALUE_OBJECT:
                 snprintf(buffer, 1024, "<object at %p>", (void *) v->object);
                 break;
@@ -266,11 +264,14 @@ value_show(struct value const *v)
         case VALUE_BUILTIN_FUNCTION:
                 snprintf(buffer, 1024, "<builtin function>");
                 break;
+        case VALUE_TAG:
+                s = tags_name(v->tag);
+                break;
         default:
                 return sclone("UNKNOWN VALUE");
         }
 
-        return sclone(buffer);
+        return sclone(tags_wrap(s, v->tags));
 }
 
 int
@@ -286,8 +287,131 @@ value_compare(void const *_v1, void const *_v2)
         switch (v1->type) {
         case VALUE_INTEGER: return (v1->integer - v2->integer); // TODO
         case VALUE_REAL:    return round(v1->real - v2->real);
-        case VALUE_STRING:  return strcmp(v1->string, v2->string);
+        case VALUE_STRING:  return memcmp(v1->string, v2->string, min(v1->bytes, v2->bytes));
         default:            vm_panic("attempt to compare values of invalid types");
+        }
+}
+
+bool
+value_truthy(struct value const *v)
+{
+        switch (v->type) {
+        case VALUE_REAL:             return v->real != 0.0f;
+        case VALUE_BOOLEAN:          return v->boolean;
+        case VALUE_INTEGER:          return (v->integer != 0);
+        case VALUE_STRING:           return (v->string[0] != '\0');
+        case VALUE_ARRAY:            return (v->array->count != 0);
+        case VALUE_REGEX:            return true;
+        case VALUE_FUNCTION:         return true;
+        case VALUE_BUILTIN_FUNCTION: return true;
+        case VALUE_OBJECT:           return true;
+        default:                     return false;
+        }
+}
+
+bool
+value_apply_predicate(struct value *p, struct value *v)
+{
+        struct value b;
+
+        switch (p->type) {
+        case VALUE_FUNCTION:
+        case VALUE_BUILTIN_FUNCTION:
+                b = vm_eval_function(p, v);
+                return value_truthy(&b);
+        case VALUE_REGEX:
+                if (v->type != VALUE_STRING) {
+                        vm_panic("regex applied as predicate to non-string");
+                }
+                {
+                        char const *s = v->string;
+                        int len = v->bytes;
+                        int rc;
+
+                        rc = pcre_exec(
+                                p->regex,
+                                NULL,
+                                s,
+                                len,
+                                0,
+                                0,
+                                NULL,
+                                0
+                        );
+
+                        if (rc < -1) {
+                                vm_panic("error while executing regular expression");
+                        }
+
+                        return rc == 0;
+                }
+        case VALUE_TAG:
+                return tags_first(v->tags) == p->tag;
+        default:
+                vm_panic("invalid type of value used as a predicate");
+        }
+}
+
+struct value
+value_apply_callable(struct value const *f, struct value const *v)
+{
+        switch (f->type) {
+        case VALUE_FUNCTION:
+        case VALUE_BUILTIN_FUNCTION:
+                return vm_eval_function(f, v);
+        case VALUE_REGEX:
+                if (v->type != VALUE_STRING) {
+                        vm_panic("regex applied as predicate to non-string");
+                }
+                {
+                        static int ovec[30];
+                        char const *s = v->string;
+                        int len = v->bytes;
+                        int rc;
+
+                        rc = pcre_exec(
+                                f->regex,
+                                NULL,
+                                s,
+                                len,
+                                0,
+                                0,
+                                ovec,
+                                30
+                        );
+
+                        if (rc < -1) {
+                                vm_panic("error while executing regular expression");
+                        }
+
+                        if (rc == -1) {
+                                return NIL;
+                        }
+
+                        struct value match;
+
+                        if (rc == 1) {
+                                match = STRINGN(s + ovec[0], ovec[1] - ovec[0]);
+                        } else {
+                                match = ARRAY(value_array_new());
+                                vec_reserve(*match.array, rc);
+
+                                int j = 0;
+                                for (int i = 0; i < rc; ++i, j += 2) {
+                                        vec_push(*match.array, STRINGN(s + ovec[j], ovec[j + 1] - ovec[j]));
+                                }
+                        }
+
+                        return match;
+                }
+        case VALUE_TAG:
+                {
+                        struct value result = *v;
+                        result.tags = tags_push(result.tags, f->tag);
+                        return result;
+                }
+        default:
+                vm_panic("invalid type of value used as a predicate");
         }
 }
 
@@ -298,7 +422,35 @@ value_test_equality(struct value const *v1, struct value const *v2)
                 return false;
         }
 
-        return equality_tests[v1->type](v1, v2);
+        switch (v1->type) {
+        case VALUE_REAL:             if (v1->real != v2->real)                                                      return false; break;
+        case VALUE_BOOLEAN:          if (v1->boolean != v2->boolean)                                                return false; break;
+        case VALUE_INTEGER:          if (v1->integer != v2->integer)                                                return false; break;
+        case VALUE_STRING:           if (v1->bytes != v2->bytes || !bytes_equal(v1->string, v2->string, v1->bytes)) return false; break;
+        case VALUE_ARRAY:            if (!arrays_equal(v1, v2))                                                     return false; break;
+        case VALUE_REGEX:            if (v1->regex != v2->regex)                                                    return false; break;
+        case VALUE_FUNCTION:         if (v1->code != v2->code)                                                      return false; break;
+        case VALUE_BUILTIN_FUNCTION: if (v1->builtin_function != v2->builtin_function)                              return false; break;
+        case VALUE_OBJECT:           if (v1->object != v2->object)                                                  return false; break;
+        case VALUE_TAG:              if (v1->tag != v2->tag)                                                        return false; break;
+        case VALUE_NIL:                                                                                                           break;
+        }
+
+        if (v1->tags != v2->tags && !tags_same(v1->tags, v2->tags)) {
+                return false;
+        }
+
+        return true;
+}
+
+inline static void
+value_array_mark(struct value_array *a)
+{
+        a->mark = true;
+
+        for (int i = 0; i < a->count; ++i) {
+                value_mark(&a->items[i]);
+        }
 }
 
 inline static void
@@ -307,6 +459,8 @@ function_mark_references(struct value *v)
         for (int i = 0; i < v->refs->count; ++i) {
                 vm_mark_variable((struct variable *)v->refs->refs[i].pointer);
         }
+
+        v->refs->mark = true;
 }
 
 void
@@ -333,26 +487,38 @@ value_array_new(void)
         return a;
 }
 
+struct value_array *
+value_array_clone(struct value_array const *a)
+{
+        struct value_array *new = value_array_new();
+
+        new->count = a->count;
+        new->capacity = a->count;
+        new->items = alloc(sizeof *new->items * new->count);
+        memcpy(new->items, a->items, sizeof *new->items * new->count);
+
+        return new;
+}
+
+void
+value_array_extend(struct value_array *a, struct value_array const *other)
+{
+        int n = a->count + other->count;
+        vec_reserve(*a, n);
+        memcpy(a->items + a->count, other->items, other->count * sizeof (struct value));
+        a->count = n;
+}
+
 struct ref_vector *
 ref_vector_new(int n)
 {
         struct ref_vector *v = gc_alloc(sizeof *v + sizeof (struct reference) * n);
         v->count = n;
-
+        v->mark = true;
         v->next = ref_vector_chain;
         ref_vector_chain = v;
 
         return v;
-}
-
-void
-value_array_mark(struct value_array *a)
-{
-        a->mark = true;
-
-        for (int i = 0; i < a->count; ++i) {
-                value_mark(&a->items[i]);
-        }
 }
 
 void
@@ -421,16 +587,18 @@ value_gc_reset(void)
 
 TEST(hash)
 {
-        struct value v1 = { .type = VALUE_STRING, .string = "hello" };
-        struct value v2 = { .type = VALUE_STRING, .string = "world" };
+        struct value v1 = STRING("hello");
+        struct value v2 = STRING("world");
 
         claim(value_hash(&v1) != value_hash(&v2));
 }
 
 TEST(equality)
 {
-        struct value v1 = { .type = VALUE_BOOLEAN, .boolean = true };
-        struct value v2 = { .type = VALUE_BOOLEAN, .boolean = false };
+        vm_init();
+
+        struct value v1 = BOOLEAN(true);
+        struct value v2 = BOOLEAN(false);
         claim(!value_test_equality(&v1, &v2));
 
         v1.type = VALUE_INTEGER;
@@ -444,8 +612,8 @@ TEST(equality)
 
         claim(
                 value_test_equality(
-                        &(struct value){ .type = VALUE_NIL },
-                        &(struct value){ .type = VALUE_NIL }
+                        &NIL,
+                        &NIL
                 )
         );
 }

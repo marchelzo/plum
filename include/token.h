@@ -3,14 +3,25 @@
 
 #include <limits.h>
 #include <stdint.h>
+#include <pcre.h>
 
+#include "vec.h"
 #include "location.h"
 
 struct token {
         enum {
-                TOKEN_KEYWORD = INT_MAX - 64,
+                /*
+                 * We start the enumeration constants slightly below INT_MAX so that they
+                 * don't collide with any codepoints. This way, the type of an open parenthesis
+                 * can literally be '(', which is a nice way to avoid verbose names like
+                 * TOKEN_OPEN_PAREN.
+                 */
+                TOKEN_KEYWORD = INT_MAX - 256,
                 TOKEN_IDENTIFIER,
+                TOKEN_TAG,
                 TOKEN_STRING,
+                TOKEN_SPECIAL_STRING,
+                TOKEN_REGEX,
                 TOKEN_INTEGER,
                 TOKEN_REAL,
                 TOKEN_END,
@@ -23,9 +34,17 @@ struct token {
                 TOKEN_BANG,
                 TOKEN_DBL_EQ,
                 TOKEN_EQ,
+                TOKEN_PLUS_EQ,
+                TOKEN_STAR_EQ,
+                TOKEN_DIV_EQ,
+                TOKEN_MINUS_EQ,
+                TOKEN_PERCENT_EQ,
                 TOKEN_ARROW,
+                TOKEN_FAT_ARROW,
+                TOKEN_SQUIGGLY_ARROW,
                 TOKEN_AND,
                 TOKEN_OR,
+                TOKEN_BIT_OR,
                 TOKEN_LEQ,
                 TOKEN_GEQ,
                 TOKEN_LT,
@@ -33,6 +52,9 @@ struct token {
                 TOKEN_AT,
                 TOKEN_INC,
                 TOKEN_DEC,
+                TOKEN_NEWLINE,
+                TOKEN_DOT_DOT,
+                TOKEN_ERROR,
         } type;
         struct location loc;
         union {
@@ -51,8 +73,27 @@ struct token {
                         KEYWORD_FALSE,
                         KEYWORD_NIL,
                         KEYWORD_IMPORT,
+                        KEYWORD_EXPORT,
+                        KEYWORD_TAG,
+                        KEYWORD_MATCH,
                 } keyword;
-                char *identifier;
+                struct {
+                        pcre *regex;
+                        pcre_extra *extra;
+                        char const *pattern;
+                };
+                struct {
+                        vec(char *) strings;
+                        vec(char *) expressions;
+                        vec(struct location) locations;
+                };
+                struct {
+                        char *module;
+                        union {
+                                char *identifier;
+                                char *tag;
+                        };
+                };
                 char *operator;
                 char *string;
                 intmax_t integer;

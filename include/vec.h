@@ -24,9 +24,9 @@
 #define vec_push_n(v, elements, n) \
           (((v).count + (n) >= (v).capacity) \
         ? ((resize((v).items, ((v).capacity = (((v).capacity + ((n) + 16)) * (sizeof (*(v).items))))), \
-                        (memcpy((v).items + (v).count, (elements), (n))), \
+                        (memcpy((v).items + (v).count, (elements), ((n) * (sizeof (*(v).items))))), \
                         ((v).count += (n)))) \
-        : ((memcpy((v).items + (v).count, (elements), (n))), \
+        : ((memcpy((v).items + (v).count, (elements), ((n) * (sizeof (*(v).items))))), \
                 ((v).count += (n))))
 
 #define vec_pop(v) \

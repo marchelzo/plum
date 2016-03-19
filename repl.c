@@ -13,7 +13,7 @@ main(void)
         while (fputs("> ", stdout), fflush(stdout), (fgets(buffer, 8192, stdin) != NULL) && sprintf(stmtbuf, "print(%s);", buffer)) {
                 if (vm_execute(stmtbuf)) {
                         // nothing to do
-                } else if ((strstr(vm_error(), "Parse error") != NULL) && vm_execute(buffer)) {
+                } else if ((strstr(vm_error(), "ParseError") != NULL) && vm_execute(buffer)) {
                         printf("ok\n");
                 } else {
                         printf("%s\n", vm_error());

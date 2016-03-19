@@ -56,5 +56,7 @@ char *slurp(char const *path)
         int n = fread(source, 1, 8192, f);
         source[n] = '\0';
 
+        fclose(f);
+
         return source;
 }

@@ -8,6 +8,9 @@ struct object;
 struct object *
 object_new(void);
 
+size_t
+object_item_count(struct object const *obj);
+
 struct value *
 object_get_value(struct object const *obj, struct value const *key);
 

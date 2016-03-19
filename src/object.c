@@ -11,7 +11,7 @@
 #include "gc.h"
 
 enum {
-        OBJECT_NUM_BUCKETS = 16
+        OBJECT_NUM_BUCKETS = 128,
 };
 
 struct object_hashmap_node {
@@ -22,6 +22,7 @@ struct object_hashmap_node {
 
 struct object {
         struct object_hashmap_node *buckets[OBJECT_NUM_BUCKETS];
+        size_t count;
 
         bool mark;
         struct object *next;
@@ -74,6 +75,12 @@ bucket_find(struct object_hashmap_node *node, struct value const *key)
         return NULL;
 }
 
+size_t
+object_item_count(struct object const *obj)
+{
+        return obj->count;
+}
+
 struct object *
 object_new(void)
 {
@@ -83,6 +90,7 @@ object_new(void)
                 object->buckets[i] = NULL;
         }
 
+        object->count = 0;
         object->mark = true;
         object->next = object_chain;
         object_chain = object;
@@ -104,6 +112,7 @@ object_put_value(struct object *obj, struct value key, struct value value)
         struct value *valueptr = bucket_find(obj->buckets[bucket_index], &key);
         
         if (valueptr == NULL) {
+                obj->count += 1;
                 obj->buckets[bucket_index] = mknode(key, value, obj->buckets[bucket_index]);
         } else {
                 *valueptr = value;
@@ -119,6 +128,7 @@ object_put_key_if_not_exists(struct object *obj, struct value key)
         if (valueptr != NULL) {
                 return valueptr;
         } else {
+                obj->count += 1;
                 obj->buckets[bucket_index] = mknode(key, nil, obj->buckets[bucket_index]);
                 return &obj->buckets[bucket_index]->value;
         }
@@ -127,26 +137,19 @@ object_put_key_if_not_exists(struct object *obj, struct value key)
 struct value *
 object_put_member_if_not_exists(struct object *obj, char const *member)
 {
-        return object_put_key_if_not_exists(obj, (struct value){ .type = VALUE_STRING, .string = member });
+        return object_put_key_if_not_exists(obj, STRING(member));
 }
 
 struct value *
 object_get_member(struct object const *obj, char const *key)
 {
-        return object_get_value(
-                obj,
-                &(struct value){ .type = VALUE_STRING, .string = key }
-        );
+        return object_get_value(obj, &STRING(key));
 }
 
 void
 object_put_member(struct object *obj, char const *key, struct value value)
 {
-        object_put_value(
-                obj,
-                (struct value){ .type = VALUE_STRING, .string = key }, // TODO: maybe clone the key
-                value
-        );
+        object_put_value(obj, STRING(key), value);
 }
 
 struct value

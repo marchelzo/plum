@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include <pcre.h>
+
+#include "location.h"
 #include "vec.h"
 
 struct expression;
@@ -16,19 +19,25 @@ struct statement {
                 STATEMENT_FOR_LOOP,
                 STATEMENT_EACH_LOOP,
                 STATEMENT_DEFINITION,
+                STATEMENT_TAG_DEFINITION,
                 STATEMENT_WHILE_LOOP,
+                STATEMENT_WHILE_MATCH,
+                STATEMENT_WHILE_LET,
+                STATEMENT_IF_LET,
+                STATEMENT_MATCH,
                 STATEMENT_CONDITIONAL,
                 STATEMENT_RETURN,
                 STATEMENT_CONTINUE,
                 STATEMENT_BREAK,
-                STATEMENT_FUNCTION_DEFINITION,
                 STATEMENT_BLOCK,
                 STATEMENT_HALT,
                 STATEMENT_NULL,
                 STATEMENT_EXPRESSION,
                 STATEMENT_IMPORT,
         } type;
+        struct location loc;
         union {
+                char *tag;
                 struct expression *expression;
                 struct expression *return_value;
                 vec(struct statement *) statements;
@@ -58,13 +67,26 @@ struct statement {
                         struct statement *else_branch;
                 } conditional;
                 struct {
-                        char *name;
-                        vec(char *) params;
-                        struct statement *body;
-                } function;
+                        struct expression *e;
+                        vec(struct expression *) patterns;
+                        vec(struct expression *) conds;
+                        vec(struct statement *) statements;
+                } match;
+                struct {
+                        struct expression *e;
+                        struct expression *pattern;
+                        struct statement *block;
+                } while_let;
+                struct {
+                        struct expression *e;
+                        struct expression *pattern;
+                        struct statement *then;
+                        struct statement *otherwise;
+                } if_let;
                 struct {
                         struct expression *target;
                         struct expression *value;
+                        bool pub;
                 };
         };
 };
@@ -75,15 +97,28 @@ struct expression {
                 EXPRESSION_INTEGER,
                 EXPRESSION_BOOLEAN,
                 EXPRESSION_STRING,
+                EXPRESSION_SPECIAL_STRING,
                 EXPRESSION_REAL,
+                EXPRESSION_REGEX,
+
                 EXPRESSION_FUNCTION_CALL,
                 EXPRESSION_MEMBER_ACCESS,
                 EXPRESSION_SUBSCRIPT,
                 EXPRESSION_ARRAY,
                 EXPRESSION_OBJECT,
                 EXPRESSION_METHOD_CALL,
-                EXPRESSION_VARIABLE,
-                EXPRESSION_ASSIGNMENT,
+                EXPRESSION_IDENTIFIER,
+                EXPRESSION_TAG,
+                EXPRESSION_TAG_APPLICATION,
+                EXPRESSION_CONDITIONAL,
+                EXPRESSION_EQ,
+
+                EXPRESSION_RANGE,
+
+                EXPRESSION_MATCH,
+
+                EXPRESSION_MATCH_REST,
+                EXPRESSION_VIEW_PATTERN,
 
                 EXPRESSION_PLUS,
                 EXPRESSION_MINUS,
@@ -99,6 +134,11 @@ struct expression {
                 EXPRESSION_DBL_EQ,
                 EXPRESSION_NOT_EQ,
 
+                EXPRESSION_PLUS_EQ,
+                EXPRESSION_STAR_EQ,
+                EXPRESSION_DIV_EQ,
+                EXPRESSION_MINUS_EQ,
+
                 EXPRESSION_PREFIX_MINUS,
                 EXPRESSION_PREFIX_BANG,
                 EXPRESSION_PREFIX_AT,
@@ -110,10 +150,9 @@ struct expression {
 
                 EXPRESSION_NIL,
 
-                EXPRESSION_IDENTIFIER_LIST,
-
-                EXPRESSION_MODULE_ACCESS,
+                EXPRESSION_LIST,
         } type;
+        struct location loc;
         union {
                 intmax_t integer;
                 bool boolean;
@@ -121,8 +160,34 @@ struct expression {
                 float real;
                 struct expression *operand;
                 vec(struct expression *) elements;
-                vec(char *) identifiers;
                 struct {
+                        bool only_identifiers;
+                        vec(struct expression *) es;
+                };
+                struct {
+                        struct expression *cond;
+                        struct expression *then;
+                        struct expression *otherwise;
+                };
+                struct {
+                        pcre *regex;
+                        pcre_extra *extra;
+                        char const *pattern;
+                };
+                struct {
+                        vec(char *) strings;
+                        vec(struct expression *) expressions;
+                };
+                struct {
+                        enum { RANGE_EXCLUDE_LEFT = 1, RANGE_EXCLUDE_RIGHT = 2 } flags;
+                        struct expression *low;
+                        struct expression *high;
+                };
+                struct {
+                        bool local;
+                        struct expression *tagged;
+                        int symbol;
+                        int tag;
                         char *module;
                         char *identifier;
                 };
@@ -131,14 +196,18 @@ struct expression {
                         struct expression *right;
                 };
                 struct {
-                        int symbol;
-                        bool local;
-                };
-                struct {
                         struct expression *target;
                         struct expression *value;
                 };
                 struct {
+                        struct expression *subject;
+                        vec(struct expression *) patterns;
+                        vec(struct expression *) conds;
+                        vec(struct expression *) thens;
+                };
+                struct {
+                        char *name;
+                        int function_symbol;
                         vec(char *) params;
                         vec(int) param_symbols;
                         vec(int) bound_symbols;
