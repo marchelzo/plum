@@ -44,15 +44,35 @@ static bool *rb_changed;
 static pthread_mutex_t *rb_mtx;
 static bool rb_locked = false;
 
+/* read from this to receive data from the parent */
 static int read_fd;
+
+/* write to this to send data to the parent */
 static int write_fd;
 
+/*
+ * Dimensions of the window viewing this buffer.
+ * If this buffer is backgrounded, these values have no meaning.
+ */
 static int lines;
 static int cols;
 
+/*
+ * The cursor location is not the position of the cursor on the screen, but rather the position
+ * in the text buffer representing the file.
+ */
 static struct location cursor = { 0, 0 };
+
+/* Line and column offsets.
+ */
 static struct location scroll = { 0, 0 };
 
+
+/*
+ * Input events received from the parent process are read into this
+ * buffer. Input events are either text events or key events, none
+ * of which should exceed 64 bytes. We will see, though.
+ */
 static char input_buffer[64];
 
 inline static void
@@ -192,6 +212,11 @@ buffer_main(void)
                 break;
         }
         case EVT_START_CONSOLE: {
+                /*
+                 * Eventually there will be special console buffer in addition to
+                 * regular text buffers; like a shell that lets interact with the
+                 * plum interpreter directly.
+                 */
                 break;
         }
         default: panic("buffer process received an invalid event code from parent");
@@ -205,12 +230,20 @@ buffer_main(void)
         lines = recvint(read_fd);
         cols = recvint(read_fd);
 
+        /*
+         * I don't know if or why this is necessary, or what it even does. Oh well.
+         */
         render();
         render();
 
         int bytes;
         int newlines, newcols;
         buffer_event_code ev;
+
+        /*
+         * The main loop of the buffer process. Wait for event notifications from the parent,
+         * and then process them.
+         */
         for (;;) {
                 ev = evt_recv(read_fd);
                 switch (ev) {
@@ -225,6 +258,24 @@ buffer_main(void)
                         read(read_fd, input_buffer, bytes);
                         input_buffer[bytes] = '\0';
                         cursor = textbuffer_insert(&data, cursor, input_buffer);
+                        render();
+                        break;
+                case EVT_KEY_INPUT:
+                        bytes = recvint(read_fd);
+                        read(read_fd, input_buffer, bytes);
+                        input_buffer[bytes] = '\0';
+
+                        if (strcmp(input_buffer, "Enter") == 0) {
+                                cursor = textbuffer_insert(&data, cursor, "\n");
+                        } else if (strcmp(input_buffer, "Backspace") == 0) {
+                                cursor = textbuffer_move_backward(&data, cursor, 1);
+                                textbuffer_remove(&data, cursor, 1);
+                        } else if (strcmp(input_buffer, "Right") == 0) {
+                                cursor = textbuffer_move_forward(&data, cursor, 1);
+                        } else if (strcmp(input_buffer, "Left") == 0) {
+                                cursor = textbuffer_move_backward(&data, cursor, 1);
+                        }
+
                         render();
                         break;
                 }
@@ -361,6 +412,15 @@ buffer_load_file(char const *path)
         }
 
         return BUFFER_LOAD_OK;
+}
+
+/*
+ * Insert 'n' bytes from the data pointed to by 'text' into the buffer at the current cursor position.
+ */
+void
+buffer_insert_n(char const *text, int n)
+{
+        cursor = textbuffer_insert_n(&data, cursor, text, n);
 }
 
 TEST(setup)

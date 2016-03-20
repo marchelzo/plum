@@ -15,7 +15,8 @@ enum {
         EVT_START_CONSOLE,
         EVT_WINDOW_DIMENSIONS,
         EVT_PARENT_SYNCED_BUFFER,
-        EVT_TEXT_INPUT
+        EVT_TEXT_INPUT,
+        EVT_KEY_INPUT,
 };
 
 static inline void

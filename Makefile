@@ -26,7 +26,7 @@ endif
 SOURCES := $(wildcard src/*.c)
 OBJECTS := $(patsubst %.c,%.o,$(SOURCES))
 
-all: plum interpreter repl test
+all: plum
 
 plum: $(OBJECTS) plum.c
 	$(CC) $(CFLAGS) -o $@ $^

@@ -32,4 +32,7 @@ editor_destroy_all_buffers(struct editor *e);
 void
 editor_handle_text_input(struct editor *e, char const *s);
 
+void
+editor_handle_key_input(struct editor *e, char const *s);
+
 #endif

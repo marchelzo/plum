@@ -29,7 +29,17 @@ struct buffer {
         int read_fd;
 };
 
+/*
+ * This is called by the main editor process to spawn children.
+ */
 struct buffer
 buffer_new(unsigned id);
+
+
+/*
+ * These functions are called within the child process and should never be called by the parent.
+ */
+void
+buffer_insert_n(char const *text, int n);
 
 #endif

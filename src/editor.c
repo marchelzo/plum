@@ -31,6 +31,19 @@ findbuffer(struct editor *e, unsigned id)
         return NULL;
 }
 
+/*
+ * Get a pointer to the editor's current buffer.
+ */
+inline static struct buffer *
+current_buffer(struct editor const *e)
+{
+        assert(e->current_window != NULL);
+        return e->current_window->buffer;
+}
+
+/*
+ * Create a new editor with one root window and no open buffers.
+ */
 struct editor
 editor_new(int lines, int cols)
 {
@@ -43,6 +56,12 @@ editor_new(int lines, int cols)
         return e;
 }
 
+/*
+ * Open a new buffer in the editor pointed to be 'e', with the contents
+ * of the file whose path is 'path'.
+ *
+ * Returns the buffer id of the new buffer.
+ */
 unsigned
 editor_create_file_buffer(struct editor *e, char const *path)
 {
@@ -56,6 +75,11 @@ editor_create_file_buffer(struct editor *e, char const *path)
         return b->id;
 }
 
+/*
+ * Make the buffer with id 'buf_id' be the buffer associated with the window
+ * pointed to by 'w'. If there was previously another buffer associated with 'w',
+ * it will no longer be assoicated with a window.
+ */
 void
 editor_view_buffer(struct editor *e, struct window *w, unsigned buf_id)
 {
@@ -70,6 +94,9 @@ editor_view_buffer(struct editor *e, struct window *w, unsigned buf_id)
         sendint(b->write_fd, w->width);
 }
 
+/*
+ * Kill the process running the buffer whose id is 'buf_id'.
+ */
 void
 editor_destroy_buffer(struct editor *e, unsigned buf_id)
 {
@@ -88,14 +115,37 @@ editor_destroy_all_buffers(struct editor *e)
         }
 }
 
+/*
+ * Causes the editor pointed to by 'e' to receive and process the key event
+ * described by the string 's' (s is returned to us by libtickit).
+ */
 void
-editor_handle_text_input(struct editor *e, char const *s)
+editor_handle_key_input(struct editor *e, char const *s)
 {
-        struct buffer *b = e->current_window->buffer;
+        struct buffer *b = current_buffer(e);
         assert(b != NULL);
 
         int bytes = strlen(s);
 
+        evt_send(b->write_fd, EVT_KEY_INPUT);
+        sendint(b->write_fd, bytes);
+        write(b->write_fd, s, bytes);
+}
+
+/*
+ * Causes the editor poitned to by 'e' to receive and process the text 's'.
+ */
+void
+editor_handle_text_input(struct editor *e, char const *s)
+{
+        struct buffer *b = current_buffer(e);
+        assert(b != NULL);
+
+        int bytes = strlen(s);
+
+        /*
+         * Send the text to the child process associated with the current buffer.
+         */
         evt_send(b->write_fd, EVT_TEXT_INPUT);
         sendint(b->write_fd, bytes);
         write(b->write_fd, s, bytes);

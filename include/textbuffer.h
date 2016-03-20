@@ -20,6 +20,15 @@ textbuffer_new(void);
 struct location
 textbuffer_insert(struct textbuffer *b, struct location loc, char const *data);
 
+struct location
+textbuffer_insert_n(struct textbuffer *b, struct location loc, char const *data, int n);
+
+struct location
+textbuffer_move_forward(struct textbuffer *b, struct location loc, int n);
+
+struct location
+textbuffer_move_backward(struct textbuffer *b, struct location loc, int n);
+
 void
 textbuffer_remove(struct textbuffer *b, struct location loc, size_t n);
 

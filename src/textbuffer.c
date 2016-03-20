@@ -2,11 +2,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "util.h"
 #include "str.h"
 #include "panic.h"
 #include "alloc.h"
 #include "test.h"
 #include "location.h"
+#include "log.h"
 #include "textbuffer.h"
 
 struct line {
@@ -88,7 +90,7 @@ joinline(struct textbuffer *b)
         str_free(&next->data);
         free(next);
 
-        b->size -= 1;
+        b->count -= 1;
 }
 
 inline static void
@@ -133,6 +135,53 @@ textbuffer_new(void)
 }
 
 struct location
+textbuffer_move_backward(struct textbuffer *b, struct location loc, int n)
+{
+        seekline(b, loc.line);
+
+        while (n > 0 && !location_is_origin(loc)) {
+                if (loc.col == 0) {
+                        --loc.line;
+                        --n;
+
+                        prevline(b);
+
+                        loc.col = str_width(&b->current->data);
+                } else {
+                        int cols = min(n, loc.col);
+                        n -= cols;
+                        loc.col -= cols;
+                }
+        }
+
+        return loc;
+}
+
+struct location
+textbuffer_move_forward(struct textbuffer *b, struct location loc, int n)
+{
+        seekline(b, loc.line);
+
+        while (n > 0 && !(loc.line + 1 == b->count && loc.col == str_width(&b->current->data))) {
+                int width = str_width(&b->current->data);
+                if (loc.col == width) {
+                        ++loc.line;
+                        --n;
+
+                        nextline(b);
+
+                        loc.col = 0;
+                } else {
+                        int cols = min(n, width - loc.col);
+                        n -= cols;
+                        loc.col += cols;
+                }
+        }
+
+        return loc;
+}
+
+struct location
 textbuffer_insert(struct textbuffer *b, struct location loc, char const *data)
 {
         struct location newloc = loc;
@@ -161,21 +210,53 @@ textbuffer_insert(struct textbuffer *b, struct location loc, char const *data)
         return newloc;
 }
 
+struct location
+textbuffer_insert_n(struct textbuffer *b, struct location loc, char const *data, int n)
+{
+
+        seekline(b, loc.line);
+
+        while (n > 0) {
+
+                int i = 0;
+                while (i < n && data[i] != '\n') {
+                        ++i;
+                }
+
+                str_insert_n(&b->current->data, loc.col, i, data);
+
+                loc.col += i;
+
+                if (i != n) {
+                        b->current->data = str_split(&b->current->prev->data, loc.col);
+                        loc.col = 0;
+                        ++loc.line;
+                        newline(b);
+                }
+
+                data += i;
+                n -= i;
+        }
+
+        return loc;
+}
+
 void
 textbuffer_remove(struct textbuffer *b, struct location loc, size_t n)
 {
         seekline(b, loc.line);
 
         size_t remove;
-        while (n > (remove = str_size(&b->current->data) - loc.col)) {
+        while (n > (remove = str_width(&b->current->data) - loc.col)) {
                 str_truncate(&b->current->data, loc.col);
                 b->size -= remove;
                 joinline(b);
                 n -= (remove + 1);
         }
 
-        str_remove(&b->current->data, loc.col, n);
-        b->size -= n;
+        remove = min(n, str_width(&b->current->data));
+        str_remove(&b->current->data, loc.col, remove);
+        b->size -= remove;
 }
 
 void
@@ -289,4 +370,19 @@ TEST(line_width)
         claim(textbuffer_line_width(&b, 0) == 3);
         claim(textbuffer_line_width(&b, 1) == 6);
         claim(textbuffer_line_width(&b, 2) == 9);
+}
+
+TEST(move_backward)
+{
+        struct textbuffer b = textbuffer_new();
+
+        struct location loc = { 0, 0 };
+
+        textbuffer_insert(&b, loc, "line one\nline two");
+
+        struct location c = { 1, 2 }; // just before the 'n' in "line two"
+        c = textbuffer_move_backward(&b, c, 4);
+
+        claim(c.line == 0);
+        claim(c.col == 7);
 }

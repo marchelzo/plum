@@ -31,19 +31,10 @@ handle_term_input_event(TickitTerm *term, TickitEventType _, void *info, void *c
         if (event->type == TICKIT_KEYEV_KEY) {
                 if (strcmp(event->str, "C-e") == 0) {
                         quit(e);
-                } else if (strcmp(event->str, "Enter") == 0) {
-                        editor_handle_text_input(e, "\n");
-                } else if (strcmp(event->str, "Right") == 0) {
-                        window_grow_x(e->root_window->top->left, 4);
-                } else if (strcmp(event->str, "Down") == 0) {
-                        window_grow_y(e->root_window->top->left, 4);
-                } else if (strcmp(event->str, "Left") == 0) {
-                        window_grow_x(e->root_window->top->left, -4);
-                } else if (strcmp(event->str, "Up") == 0) {
-                        window_grow_y(e->root_window->top->left, -4);
+                } else {
+                        editor_handle_key_input(e, event->str);
                 }
         } else /* event->type == TICKIT_KEYEV_TEXT */ {
-                LOG("Text event: %s", event->str);
                 editor_handle_text_input(e, event->str);
         }
 
@@ -52,6 +43,9 @@ handle_term_input_event(TickitTerm *term, TickitEventType _, void *info, void *c
 
 int main(void)
 {
+        /*
+         * Necessary for curses to be able to draw multi-byte characters properly.
+         */
         setlocale(LC_ALL, "");
 
         initscr();
@@ -66,7 +60,7 @@ int main(void)
 
         tickit_term_await_started_msec(term, 100);
         tickit_term_setctl_int(term, TICKIT_TERMCTL_CURSORVIS, 1);
-        tickit_term_setctl_int(term, TICKIT_TERMCTL_ALTSCREEN, 1);
+        //tickit_term_setctl_int(term, TICKIT_TERMCTL_ALTSCREEN, 1);
 
         int lines, cols;
         tickit_term_get_size(term, &lines, &cols);
@@ -91,7 +85,6 @@ int main(void)
         editor_view_buffer(&e, w->top->left, b1);
         editor_view_buffer(&e, w->top->right, b2);
         editor_view_buffer(&e, w->bot, b3);
-
 
         for (;;) {
                 render(&e, term);

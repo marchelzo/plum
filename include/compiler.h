@@ -8,7 +8,7 @@ void
 compiler_init(void);
 
 void
-compiler_introduce_symbol(char const *);
+compiler_introduce_symbol(char const *, char const *);
 
 char *
 compiler_compile_source(char const *source, int *symbols, char const *filename);

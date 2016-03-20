@@ -111,7 +111,9 @@ static jmp_buf jb;
 static char const *err_msg;
 static char err_buf[512];
 
+static int builtin_modules;
 static int builtin_count;
+
 static int symbol;
 static int jumpdistance;
 static vec(struct module) modules;
@@ -1003,6 +1005,7 @@ emit_try_match(struct expression const *pattern)
                 emit_instr(INSTR_CALL);
                 emit_int(1);
                 emit_try_match(pattern->right);
+                emit_instr(INSTR_POP);
                 break;
         case EXPRESSION_ARRAY:
                 for (int i = 0; i < pattern->elements.count; ++i) {
@@ -1760,13 +1763,13 @@ import_module(char *name, char *as)
          *
          * e.g.,
          *
-         * import foo;
-         * import foo;
+         * import foo
+         * import foo
          *
          * and
          *
-         * import foo as bar;
-         * import baz as bar;
+         * import foo as bar
+         * import baz as bar
          *
          * are both errors.
          */
@@ -1874,10 +1877,32 @@ compiler_init(void)
         state = freshstate();
 }
 
+/*
+ * This name kind of sucks.
+ */
 void
-compiler_introduce_symbol(char const *name)
+compiler_introduce_symbol(char const *module, char const *name)
 {
-        addsymbol(global, name, false);
+        builtin_count += 1;
+
+        struct scope *s;
+        if (module == NULL) {
+                s = global;
+        } else {
+                s = get_module_scope(module);
+
+                if (s == NULL) {
+                        ++builtin_modules;
+                        s = newscope(NULL, false);
+                        vec_push(modules, ((struct module){
+                                .path = module,
+                                .code = NULL,
+                                .scope = s
+                        }));
+                }
+        }
+
+        addsymbol(s, name, false);
         builtin_count += 1;
 }
 

@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <assert.h>
 
 #include <tickit.h>
 
@@ -270,6 +271,7 @@ str_split(struct str *s, size_t i)
         .col = outpos.columns
     };
 
+    s->cols = s->col;
     s->right = alloc(s->capacity + 1);
     s->rightcount = 0;
     
@@ -281,6 +283,7 @@ str_copy_cols(struct str const *s, char *out, size_t start, size_t n)
 {
         char *data;
 
+        assert(s != NULL);
         if (start > s->col) {
                 start -= s->col;
                 data = s->right + s->capacity - s->rightcount;

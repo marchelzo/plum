@@ -17,6 +17,7 @@
 #include "log.h"
 #include "operators.h"
 #include "builtin_functions.h"
+#include "buffer_functions.h"
 #include "array_methods.h"
 #include "string_methods.h"
 #include "tags.h"
@@ -56,17 +57,22 @@ static char const *err_msg;
 static char err_buf[8192];
 
 static struct {
+        char const *module;
         char const *name;
         struct value (*fn)(value_vector *);
 } builtins[] = {
-        { .name = "print", .fn = builtin_print },
-        { .name = "read",  .fn = builtin_read  },
-        { .name = "rand",  .fn = builtin_rand  },
-        { .name = "int",   .fn = builtin_int   },
-        { .name = "str",   .fn = builtin_str   },
-        { .name = "bool",  .fn = builtin_bool  },
-        { .name = "min",   .fn = builtin_min   },
-        { .name = "max",   .fn = builtin_max   },
+        { .module = NULL,     .name = "print",    .fn = builtin_print           },
+        { .module = NULL,     .name = "read",     .fn = builtin_read            },
+        { .module = NULL,     .name = "rand",     .fn = builtin_rand            },
+        { .module = NULL,     .name = "int",      .fn = builtin_int             },
+        { .module = NULL,     .name = "str",      .fn = builtin_str             },
+        { .module = NULL,     .name = "bool",     .fn = builtin_bool            },
+        { .module = NULL,     .name = "min",      .fn = builtin_min             },
+        { .module = NULL,     .name = "max",      .fn = builtin_max             },
+        { .module = "buffer", .name = "insert",   .fn = builtin_buffer_insert   },
+        { .module = "buffer", .name = "remove",   .fn = builtin_buffer_remove   },
+        { .module = "buffer", .name = "forward",  .fn = builtin_buffer_forward  },
+        { .module = "buffer", .name = "backward", .fn = builtin_buffer_backward },
 };
 
 static int builtin_count = sizeof builtins / sizeof builtins[0];
@@ -83,6 +89,11 @@ newvar(struct variable *next)
         return v;
 }
 
+/*
+ * This relies on no other symbols being introduced to the compiler
+ * up until the point that this is called. i.e., it assumes that the
+ * first built-in function should have symbol 0. I think this ok.
+ */
 static void
 add_builtins(void)
 {
@@ -92,7 +103,8 @@ add_builtins(void)
         }
 
         for (int i = 0; i < builtin_count; ++i) {
-                compiler_introduce_symbol(builtins[i].name);
+                printf("adding builtin %s::%s\n", builtins[i].module ? builtins[i].module : "", builtins[i].name);
+                compiler_introduce_symbol(builtins[i].module, builtins[i].name);
                 vars[i]->value = BUILTIN(builtins[i].fn);
         }
 
