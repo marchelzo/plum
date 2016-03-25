@@ -137,19 +137,21 @@ object_put_key_if_not_exists(struct object *obj, struct value key)
 struct value *
 object_put_member_if_not_exists(struct object *obj, char const *member)
 {
-        return object_put_key_if_not_exists(obj, STRING(member));
+        return object_put_key_if_not_exists(obj, STRING_NOGC(member, strlen(member)));
 }
 
 struct value *
 object_get_member(struct object const *obj, char const *key)
 {
-        return object_get_value(obj, &STRING(key));
+        struct value string = STRING_NOGC(key, strlen(key));
+        return object_get_value(obj, &string);
 }
 
 void
 object_put_member(struct object *obj, char const *key, struct value value)
 {
-        object_put_value(obj, STRING(key), value);
+        struct value string = STRING_NOGC(key, strlen(key));
+        object_put_value(obj, string, value);
 }
 
 struct value

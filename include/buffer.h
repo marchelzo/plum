@@ -3,12 +3,16 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <setjmp.h>
 
 #include <unistd.h>
 #include <pthread.h>
 
 #include "file.h"
 #include "textbuffer.h"
+#include "value.h"
+
+jmp_buf buffer_err_jb;
 
 struct buffer {
 
@@ -27,6 +31,11 @@ struct buffer {
 
         int write_fd;
         int read_fd;
+
+        /*
+         * null pointer if the buffer is not associated with a window.
+         */
+        struct window *window;
 };
 
 /*
@@ -41,5 +50,77 @@ buffer_new(unsigned id);
  */
 void
 buffer_insert_n(char const *text, int n);
+
+int
+buffer_remove(int n);
+
+char *
+buffer_current_line(void);
+
+char *
+buffer_get_line(int n);
+
+int
+buffer_forward(int n);
+
+int
+buffer_backward(int n);
+
+int
+buffer_lines(void);
+
+int
+buffer_line(void);
+
+int
+buffer_column(void);
+
+void
+buffer_grow_y(int amount);
+
+void
+buffer_grow_x(int amount);
+
+void
+buffer_next_window(void);
+
+void
+buffer_prev_window(void);
+
+int
+buffer_prev_line(int amount);
+
+int
+buffer_next_line(int amount);
+
+int
+buffer_scroll_up(int amount);
+
+int
+buffer_scroll_down(int amount);
+
+int
+buffer_right(int n);
+
+int
+buffer_left(int n);
+
+void
+buffer_map_normal(struct value_array *chord, struct value action);
+
+void
+buffer_map_insert(struct value_array *chord, struct value action);
+
+void
+buffer_normal_mode(void);
+
+void
+buffer_insert_mode(void);
+
+void
+buffer_cut_line(void);
+
+void
+buffer_mark_values(void);
 
 #endif

@@ -3,10 +3,12 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "vec.h"
 #include "ast.h"
 #include "object.h"
+#include "gc.h"
 #include "tags.h"
 
 #define INTEGER(k)    ((struct value){ .type = VALUE_INTEGER,          .integer          = (k), .tags = 0 })
@@ -19,9 +21,6 @@
 #define BUILTIN(f)    ((struct value){ .type = VALUE_BUILTIN_FUNCTION, .builtin_function = (f), .tags = 0 })
 #define TAG(t)        ((struct value){ .type = VALUE_TAG,              .tag              = (t), .tags = 0 })
 #define NIL           ((struct value){ .type = VALUE_NIL,                                       .tags = 0 })
-
-#define STRING(s)     ((struct value){ .type = VALUE_STRING, .string = (s), .bytes = strlen((s)), .tags = 0 })
-#define STRINGN(s, n) ((struct value){ .type = VALUE_STRING, .string = (s), .bytes = (n),         .tags = 0 })
 
 #define CALLABLE(v) (((v).type & (VALUE_FUNCTION | VALUE_BUILTIN_FUNCTION | VALUE_REGEX | VALUE_TAG)) != 0)
 
@@ -36,6 +35,12 @@ struct value_array {
 
         bool mark;
         struct value_array *next;
+};
+
+struct string {
+        bool mark;
+        struct string *next;
+        char data[];
 };
 
 struct reference {
@@ -80,6 +85,7 @@ struct value {
                 struct {
                         char const *string;
                         size_t bytes;
+                        struct string *gcstr;
                 };
                 struct {
                         pcre *regex;
@@ -116,6 +122,12 @@ value_apply_callable(struct value const *f, struct value const *v);
 char *
 value_show(struct value const *v);
 
+struct string *
+value_string_alloc(int n);
+
+struct string *
+value_clone_string(char const *s, int n);
+
 struct value_array *
 value_array_new(void);
 
@@ -135,16 +147,108 @@ void
 value_array_sweep(void);
 
 void
+value_string_sweep(void);
+
+void
 value_ref_vector_sweep(void);
 
 void
 value_gc_reset(void);
+
+inline static void
+value_array_push(struct value_array *a, struct value v)
+{
+        if (a->count == a->capacity) {
+                a->capacity = a->capacity ? a->capacity * 2 : 4;
+                struct value *new_items = gc_alloc(a->capacity * sizeof (struct value));
+
+                if (a->items != NULL) {
+                        memcpy(new_items, a->items, a->count * sizeof (struct value));
+                }
+
+                a->items = new_items;
+        }
+
+        a->items[a->count++] = v;
+}
+
+inline static void
+value_array_reserve(struct value_array *a, int count)
+{
+        if (a->capacity >= count) {
+                return;
+        }
+
+        if (a->capacity == 0) {
+                a->capacity = 16;
+        }
+
+        while (a->capacity < count) {
+                a->capacity *= 2;
+        }
+
+        struct value *new_items = gc_alloc(a->capacity * sizeof (struct value));
+        if (a->count != 0) {
+                memcpy(new_items, a->items, a->count * sizeof (struct value));
+        }
+        a->items = new_items;
+}
+
+inline static struct value
+STRING_CLONE(char const *s, int n)
+{
+        struct string *clone = value_clone_string(s, n);
+        return (struct value) {
+                .type = VALUE_STRING,
+                .tags = 0,
+                .string = clone->data,
+                .bytes = n,
+                .gcstr = clone,
+        };
+}
+
+inline static struct value
+STRING(char const *s, int n, struct string *gcstr)
+{
+        return (struct value) {
+                .type = VALUE_STRING,
+                .tags = 0,
+                .string = s,
+                .bytes = n,
+                .gcstr = gcstr,
+        };
+}
+
+inline static struct value
+STRING_VIEW(struct value s, int offset, int n)
+{
+        return (struct value) {
+                .type = VALUE_STRING,
+                .tags = 0,
+                .string = s.string + offset,
+                .bytes = n,
+                .gcstr = s.gcstr,
+        };
+}
+
+inline static struct value
+STRING_NOGC(char const *s, int n)
+{
+        return (struct value) {
+                .type = VALUE_STRING,
+                .tags = 0,
+                .string = s,
+                .bytes = n,
+                .gcstr = NULL,
+        };
+}
 
 inline static struct value
 SOME(struct value v)
 {
         struct value s = v;
         s.tags = tags_push(s.tags, 2);
+        s.type |= VALUE_TAGGED;
         return s;
 }
 

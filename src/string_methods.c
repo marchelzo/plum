@@ -46,7 +46,7 @@ string_length(struct value *string, value_vector *args)
         }
 
         limitpos.graphemes = -1;
-        tickit_string_count(string->string, &outpos, &limitpos);
+        tickit_string_ncount(string->string, string->bytes, &outpos, &limitpos);
 
         return INTEGER(outpos.graphemes);
 }
@@ -84,7 +84,7 @@ string_slice(struct value *string, value_vector *args)
 
         limitpos.graphemes = -1;
         limitpos.bytes = string->bytes;
-        tickit_string_count(s, &outpos, &limitpos);
+        tickit_string_ncount(s, string->bytes, &outpos, &limitpos);
 
         if (i < 0) {
                 i += outpos.graphemes;
@@ -95,15 +95,15 @@ string_slice(struct value *string, value_vector *args)
         }
         
         limitpos.graphemes = i;
-        tickit_string_count(s, &outpos, &limitpos);
+        tickit_string_ncount(s, string->bytes, &outpos, &limitpos);
 
         s += outpos.bytes;
         limitpos.bytes -= outpos.bytes;
 
         limitpos.graphemes = n;
-        tickit_string_count(s, &outpos, &limitpos);
+        tickit_string_ncount(s, limitpos.bytes, &outpos, &limitpos);
 
-        return STRINGN(s, outpos.bytes);
+        return STRING_VIEW(*string, 0, outpos.bytes);
 }
 
 static struct value
@@ -151,7 +151,7 @@ string_search(struct value *string, value_vector *args)
 
         limitpos.graphemes = -1;
         limitpos.bytes = n;
-        tickit_string_count(s, &outpos, &limitpos);
+        tickit_string_ncount(s, n, &outpos, &limitpos);
         limitpos.bytes = -1;
 
         return INTEGER(outpos.graphemes);
@@ -189,7 +189,7 @@ string_split(struct value *string, value_vector *args)
                 
                 while (i < len) {
 
-                        struct value str = STRINGN(s + i, 0);
+                        struct value str = STRING_VIEW(*string, i, 0);
 
                         while (i < len && !is_prefix(s + i, len - i, p, n)) {
                                 ++str.bytes;
@@ -223,7 +223,7 @@ string_split(struct value *string, value_vector *args)
                                 goto next;
                         }
 
-                        vec_push(*result.array, STRINGN(s + start, n));
+                        vec_push(*result.array, STRING_VIEW(*string, start, n));
 next:
                         start = out[1];
                 }
@@ -311,13 +311,13 @@ string_replace(struct value *string, value_vector *args)
                         struct value match;
 
                         if (rc == 1) {
-                                match = STRINGN(s + out[0], out[1] - out[0]);
+                                match = STRING_VIEW(*string, out[0], out[1] - out[0]);
                         } else {
                                 match = ARRAY(value_array_new());
 
                                 int j = 0;
                                 for (int i = 0; i < rc; ++i, j += 2) {
-                                        vec_push(*match.array, STRINGN(s + out[j], out[j + 1] - out[j]));
+                                        vec_push(*match.array, STRING_VIEW(*string, out[j], out[j + 1] - out[j]));
                                 }
                         }
 
@@ -334,7 +334,7 @@ string_replace(struct value *string, value_vector *args)
                 vec_push_n(chars, s + start, len - start);
         }
 
-        return STRINGN(sclone(chars.items), chars.count);
+        return STRING_CLONE(chars.items, chars.count);
 }
 
 static struct value
@@ -385,7 +385,6 @@ string_match(struct value *string, value_vector *args)
         }
 
         static int ovec[30];
-        char const *s = string->string;
         int len = string->bytes;
         int rc;
 
@@ -411,14 +410,14 @@ string_match(struct value *string, value_vector *args)
         struct value match;
 
         if (rc == 1) {
-                match = STRINGN(s + ovec[0], ovec[1] - ovec[0]);
+                match = STRING_VIEW(*string, ovec[0], ovec[1] - ovec[0]);
         } else {
                 match = ARRAY(value_array_new());
                 vec_reserve(*match.array, rc);
 
                 int j = 0;
                 for (int i = 0; i < rc; ++i, j += 2) {
-                        vec_push(*match.array, STRINGN(s + ovec[j], ovec[j + 1] - ovec[j]));
+                        vec_push(*match.array, STRING_VIEW(*string, ovec[j], ovec[j + 1] - ovec[j]));
                 }
         }
 
@@ -459,14 +458,14 @@ string_matches(struct value *string, value_vector *args)
                 struct value match;
 
                 if (rc == 1) {
-                        match = STRINGN(s + ovec[0], ovec[1] - ovec[0]);
+                        match = STRING_VIEW(*string, ovec[0], ovec[1] - ovec[0]);
                 } else {
                         match = ARRAY(value_array_new());
                         vec_reserve(*match.array, rc);
 
                         int j = 0;
                         for (int i = 0; i < rc; ++i, j += 2) {
-                                vec_push(*match.array, STRINGN(s + ovec[j], ovec[j + 1] - ovec[j]));
+                                vec_push(*match.array, STRING_VIEW(*string, ovec[j], ovec[j + 1] - ovec[j]));
                         }
                 }
 
@@ -498,7 +497,7 @@ string_char(struct value *string, value_vector *args)
 
         limitpos.graphemes = i.integer;
         limitpos.bytes = string->bytes;
-        tickit_string_count(string->string, &outpos, &limitpos);
+        tickit_string_ncount(string->string, string->bytes, &outpos, &limitpos);
 
         if (outpos.graphemes != i.integer) {
                 return NIL;
@@ -508,13 +507,13 @@ string_char(struct value *string, value_vector *args)
 
         limitpos.graphemes = 1;
         limitpos.bytes = string->bytes - offset;
-        tickit_string_count(string->string + offset, &outpos, &limitpos);
+        tickit_string_ncount(string->string + offset, limitpos.bytes, &outpos, &limitpos);
 
         if (outpos.graphemes != 1) {
                 return NIL;
         }
 
-        return STRINGN(string->string + offset, outpos.bytes);
+        return STRING_VIEW(*string, offset, outpos.bytes);
 }
 
 static struct value
@@ -526,15 +525,15 @@ string_chars(struct value *string, value_vector *args)
 
         struct value result = ARRAY(value_array_new());
 
-        char const *s = string->string;
+        int i = 0;
         int n = string->bytes;
 
         while (n > 0) {
                 limitpos.bytes = n;
                 limitpos.graphemes = 1;
-                tickit_string_count(s, &outpos, &limitpos);
-                vec_push(*result.array, STRINGN(s, outpos.bytes));
-                s += outpos.bytes;
+                tickit_string_ncount(string->string + i, n, &outpos, &limitpos);
+                value_array_push(result.array, STRING_VIEW(*string, i, outpos.bytes));
+                i += outpos.bytes;
                 n -= outpos.bytes;
         }
 

@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "panic.h"
 #include "alloc.h"
 
 uintmax_t
@@ -45,18 +46,33 @@ contains(char const *s, char c)
         return (c != '\0') && (strchr(s, c) != NULL);
 }
 
-char *slurp(char const *path)
+char *
+slurp(char const *path)
 {
         FILE *f = fopen(path, "r");
         if (f == NULL) {
                 return NULL;
         }
 
-        char *source = malloc(8192 * 6);
-        int n = fread(source, 1, 8192, f);
-        source[n] = '\0';
+        char *contents = NULL;
+        int capacity = 0;
+        int used = 0;
+
+        int n;
+        static char buffer[4096];
+        while ((n = fread(buffer, 1, sizeof buffer, f)) != 0) {
+                if (n + used >= capacity) {
+                        capacity += n;
+                        capacity *= 2;
+                        resize(contents, capacity);
+                }
+
+                memcpy(contents + used, buffer, n);
+                used += n;
+        }
 
         fclose(f);
 
-        return source;
+        contents[used] = '\0';
+        return contents;
 }

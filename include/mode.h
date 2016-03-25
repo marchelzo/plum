@@ -1,5 +1,5 @@
-#ifndef MODE_H_INCLUDED
-#define MODE_H_INCLUDED
+#ifndef STATE_H_INCLUDED
+#define STATE_H_INCLUDED
 
 #include "vec.h"
 #include "value.h"
@@ -62,12 +62,17 @@ struct event_handler {
  * Event handlers... well... handle events. A mode may have an onWrite handler
  * that runs a build script, or an onBackground handler that runs some code when a
  * the buffer is backgrounded.
+ *
  */
 struct mode {
         
-        vec(struct binding) bindings;
-        vec(struct mappigng) mappings;
-        vec(struct event_handler) handlers;
+        vec(struct event_handler) event_handlers;
+
+        vec(struct binding) normal_bindings;
+        vec(struct mapping) normal_mappings;
+
+        vec(struct binding) insert_bindings;
+        vec(struct mapping) insert_mappings;
 
 };
 

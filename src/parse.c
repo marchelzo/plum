@@ -92,9 +92,9 @@ static vec(struct token) tokens;
 static int tokidx = 0;
 enum lex_context lex_ctx = LEX_PREFIX;
 
-static struct statement BREAK_STATEMENT    = { .type = STATEMENT_BREAK    };
-static struct statement CONTINUE_STATEMENT = { .type = STATEMENT_CONTINUE };
-static struct statement NULL_STATEMENT     = { .type = STATEMENT_NULL     };
+static struct statement BREAK_STATEMENT    = { .type = STATEMENT_BREAK,    .loc = {42, 42} };
+static struct statement CONTINUE_STATEMENT = { .type = STATEMENT_CONTINUE, .loc = {42, 42} };
+static struct statement NULL_STATEMENT     = { .type = STATEMENT_NULL,     .loc = {42, 42} };
 
 static struct statement *
 parse_statement(void);
@@ -1464,7 +1464,12 @@ parse_return_statement(void)
 
         struct statement *s = mkstmt();
         s->type = STATEMENT_RETURN;
-        s->return_value = parse_expr(0);
+
+        if (tok()->type == ';') {
+                s->return_value = NULL;
+        } else {
+                s->return_value = parse_expr(0);
+        }
 
         consume(';');
 

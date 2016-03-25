@@ -11,6 +11,12 @@
 #include "log.h"
 #include "textbuffer.h"
 
+enum {
+        EDIT_INSERTION,
+        EDIT_DELETION,
+        EDIT_GROUP,
+};
+
 struct line {
         struct line *prev;
         struct str data;
@@ -18,14 +24,31 @@ struct line {
 };
 
 struct edit {
-        enum { EDIT_INSERT, EDIT_DELETE } type;
-        struct location loc;
-        char *data;
+        char type;
+        union {
+                vec(struct edit) edits;
+                struct {
+                        /*
+                         * Note: for deletions, the start and end locations are the same.
+                         * For insertions, however, they differ, and this is the _end_ location.
+                         */
+                        struct location loc;
+                        vec(char) data;
+                };
+        };
 };
 
-struct editgroup {
-        struct edit edits;
-};
+inline static int
+shared_prefix_length(char const *s1, char const *s2, int n)
+{
+        int spl = 0;
+
+        while (spl < n && s1[spl] == s2[spl]) {
+                ++spl;
+        }
+
+        return spl;
+}
 
 static struct line *
 line_new(struct line *prev, struct str data, struct line *next)
@@ -72,7 +95,7 @@ newline(struct textbuffer *b)
                 b->last = new;
         }
         b->current->next = new;
-        b->count += 1;
+        b->lines += 1;
         nextline(b);
 }
 
@@ -90,7 +113,8 @@ joinline(struct textbuffer *b)
         str_free(&next->data);
         free(next);
 
-        b->count -= 1;
+        b->bytes -= 1;
+        b->lines -= 1;
 }
 
 inline static void
@@ -113,8 +137,8 @@ removeline(struct textbuffer *b)
                 b->first = current->next;
         }
 
-        b->size -= str_size(&current->data);
-        b->count -= 1;
+        b->bytes -= str_size(&current->data);
+        b->lines -= 1;
 
         str_free(&current->data);
         free(current);
@@ -124,97 +148,141 @@ struct textbuffer
 textbuffer_new(void)
 {
         struct line *line = line_new(NULL, str_new(), NULL);
-        return (struct textbuffer) {
-                .size    = 1,
-                .count   = 1,
-                .line    = 0,
-                .first   = line,
-                .current = line,
-                .last    = line
+        struct textbuffer tb = {
+                .lines      = 1,
+                .line       = 0,
+                .bytes      = 0,
+                .first      = line,
+                .current    = line,
+                .last       = line,
         };
+
+        vec_init(tb.history);
+        vec_init(tb.markers);
+        tb.markers_allocated = 0;
+
+        return tb;
 }
 
-struct location
-textbuffer_move_backward(struct textbuffer *b, struct location loc, int n)
+int
+textbuffer_move_backward(struct textbuffer *b, struct location *loc, int n)
 {
-        seekline(b, loc.line);
+        seekline(b, loc->line);
 
-        while (n > 0 && !location_is_origin(loc)) {
-                if (loc.col == 0) {
-                        --loc.line;
-                        --n;
+        int most = n;
 
-                        prevline(b);
+        n -= str_move_left(&b->current->data, &loc->col, n);
+        while (n > 0 && loc->line != 0) {
+                --n;
+                --loc->line;
 
-                        loc.col = str_width(&b->current->data);
-                } else {
-                        int cols = min(n, loc.col);
-                        n -= cols;
-                        loc.col -= cols;
-                }
+                prevline(b);
+
+                loc->col = str_width(&b->current->data);
+                n -= str_move_left(&b->current->data, &loc->col, n);
         }
 
-        return loc;
+        b->high_col = loc->col;
+
+        return most - n;
 }
 
-struct location
-textbuffer_move_forward(struct textbuffer *b, struct location loc, int n)
+int
+textbuffer_move_forward(struct textbuffer *b, struct location *loc, int n)
 {
-        seekline(b, loc.line);
+        seekline(b, loc->line);
 
-        while (n > 0 && !(loc.line + 1 == b->count && loc.col == str_width(&b->current->data))) {
-                int width = str_width(&b->current->data);
-                if (loc.col == width) {
-                        ++loc.line;
-                        --n;
+        int most = n;
 
-                        nextline(b);
+        n -= str_move_right(&b->current->data, &loc->col, n);
+        while (n > 0 && loc->line + 1 != b->lines) {
+                --n;
+                ++loc->line;
 
-                        loc.col = 0;
-                } else {
-                        int cols = min(n, width - loc.col);
-                        n -= cols;
-                        loc.col += cols;
-                }
+                nextline(b);
+
+                loc->col = 0;
+                n -= str_move_right(&b->current->data, &loc->col, n);
         }
 
-        return loc;
+        b->high_col = loc->col;
+
+        return most - n;
 }
 
-struct location
-textbuffer_insert(struct textbuffer *b, struct location loc, char const *data)
+int
+textbuffer_move_right(struct textbuffer *b, struct location *loc, int n)
 {
-        struct location newloc = loc;
-        size_t i = strcspn(data, "\n");
+        seekline(b, loc->line);
 
-        seekline(b, loc.line);
-        str_insert_n(&b->current->data, loc.col, i, data);
-        newloc.col += i;
+        int moved = str_move_right(&b->current->data, &loc->col, n);
+        b->high_col = loc->col;
 
-        size_t splitoffset = loc.col;
-        while (data[i] == '\n') {
-                data += i + 1;
-
-                newline(b);
-                b->current->data = str_split(&b->current->prev->data, i + splitoffset);
-
-                i = strcspn(data, "\n");
-                str_insert_n(&b->current->data, 0, i, data);
-
-                newloc.line += 1;
-                newloc.col = i;
-
-                splitoffset = 0;
-        }
-
-        return newloc;
+        return moved;
 }
 
-struct location
-textbuffer_insert_n(struct textbuffer *b, struct location loc, char const *data, int n)
+int
+textbuffer_move_left(struct textbuffer *b, struct location *loc, int n)
+{
+        seekline(b, loc->line);
+
+        int moved = str_move_left(&b->current->data, &loc->col, n);
+        b->high_col = loc->col;
+
+        return moved;
+}
+
+int
+textbuffer_next_line(struct textbuffer *b, struct location *loc, int n)
+{
+        seekline(b, loc->line);
+
+        int moving = min(n, b->lines - b->line - 1);
+
+        loc->line += moving;
+        seekline(b, loc->line);
+
+        loc->col = str_move_to(&b->current->data, b->high_col);
+
+        return moving;
+}
+
+int
+textbuffer_prev_line(struct textbuffer *b, struct location *loc, int n)
+{
+        seekline(b, loc->line);
+
+        int moving = min(n, b->line);
+
+        loc->line -= moving;
+        seekline(b, loc->line);
+
+        loc->col = min(str_width(&b->current->data), b->high_col);
+
+        return moving;
+}
+
+void
+textbuffer_insert(struct textbuffer *b, struct location *loc, char const *data)
+{
+        textbuffer_insert_n(b, loc, data, strlen(data));
+}
+
+/*
+ * Insert 'n' _bytes_ from the string pointed to by 'data' into the textbuffer
+ * pointed to by 'b' at location 'loc'.
+ */
+void
+textbuffer_insert_n(struct textbuffer *b, struct location *loc, char const *data, int n)
 {
 
-        seekline(b, loc.line);
+        seekline(b, loc->line);
+
+        char const *d = data;
+        int bytes = n;
+
+        bool combine_history = (vec_len(b->history) >= 1)
+                            && (location_same(vec_last(b->history)->loc, *loc));
 
         while (n > 0) {
 
@@ -223,67 +291,160 @@ textbuffer_insert_n(struct textbuffer *b, struct location loc, char const *data,
                         ++i;
                 }
 
-                str_insert_n(&b->current->data, loc.col, i, data);
-
-                loc.col += i;
+                str_insert_n(&b->current->data, &loc->col, i, data);
 
                 if (i != n) {
-                        b->current->data = str_split(&b->current->prev->data, loc.col);
-                        loc.col = 0;
-                        ++loc.line;
                         newline(b);
+                        b->current->data = str_split(&b->current->prev->data, loc->col);
+
+                        loc->col = 0;
+                        ++loc->line;
+
+                        ++i;
                 }
 
                 data += i;
                 n -= i;
         }
 
-        return loc;
+        b->high_col = loc->col;
+
+        /*
+         * Push this edit onto the history stack.
+         */
+        if (combine_history && vec_last(b->history)->type == EDIT_INSERTION) {
+                vec_push_n(vec_last(b->history)->data, d, bytes);
+                vec_last(b->history)->loc = *loc;
+        } else if (combine_history && vec_last(b->history)->type == EDIT_DELETION) {
+                struct edit *del = vec_last(b->history);
+                int delcount = del->data.count;
+                int n = min(bytes, delcount);
+                int spl = shared_prefix_length(d, vec_last(b->history)->data.items, n);
+                memmove(del->data.items, del->data.items + spl, delcount - spl);
+                del->data.count -= spl;
+                if (spl < delcount) {
+                        d += spl;
+                        bytes -= spl;
+                        goto insert;
+                }
+        } else {
+insert:
+                {
+                        struct edit e = { .type = EDIT_INSERTION, .loc = *loc };
+                        vec_init(e.data);
+                        vec_push_n(e.data, d, bytes);
+                        vec_push(b->history, e);
+                }
+        }
+
+        b->bytes += n;
 }
 
+/*
+ * Move the cursor to the end of the buffer and insert n bytes
+ * from 'data'.
+ */
 void
-textbuffer_remove(struct textbuffer *b, struct location loc, size_t n)
+textbuffer_append_n(struct textbuffer *b, struct location *loc, char const *data, int n)
+{
+        b->current = b->last;
+        b->line = b->lines - 1;
+        loc->line = b->line;
+        textbuffer_insert_n(b, loc, data, n);
+}
+
+/*
+ * Remove 'n' characters after 'loc'.
+ */
+int
+textbuffer_remove(struct textbuffer *b, struct location loc, int n)
 {
         seekline(b, loc.line);
 
-        size_t remove;
-        while (n > (remove = str_width(&b->current->data) - loc.col)) {
-                str_truncate(&b->current->data, loc.col);
-                b->size -= remove;
+        int most = n;
+        int lines_deleted = 0;
+        int bytes;
+        int chars;
+
+        for (;;) {
+                str_remove_chars(&b->current->data, loc.col, n, &bytes, &chars);
+
+                b->bytes -= bytes;
+                n -= chars;
+
+                if (b->line + 1 == b->lines || n == 0) {
+                        break;
+                }
+
+                ++lines_deleted;
                 joinline(b);
-                n -= (remove + 1);
+                --n;
         }
 
-        remove = min(n, str_width(&b->current->data));
-        str_remove(&b->current->data, loc.col, remove);
-        b->size -= remove;
+
+        return most - n;
 }
 
 void
-textbuffer_remove_line(struct textbuffer *b, size_t i)
+textbuffer_remove_line(struct textbuffer *b, int i)
 {
         seekline(b, i);
         removeline(b);
 }
 
 char *
-textbuffer_copy_line_cols(struct textbuffer *b, size_t line, char *out, size_t start, size_t n)
+textbuffer_copy_line_cols(struct textbuffer *b, int line, char *out, int start, int n)
 {
         seekline(b, line);
         return str_copy_cols(&b->current->data, out, start, n);
 }
 
-size_t
+int
 textbuffer_num_lines(struct textbuffer *b)
 {
-        return b->count;
+        return b->lines;
 }
 
-size_t
-textbuffer_line_width(struct textbuffer *b, size_t line)
+int
+textbuffer_line_width(struct textbuffer *b, int line)
 {
         seekline(b, line);
         return str_width(&b->current->data);
+}
+
+char *
+textbuffer_get_line(struct textbuffer *b, int line)
+{
+        seekline(b, line);
+        return str_cstr(&b->current->data);
+}
+
+void
+textbuffer_cut_line(struct textbuffer *b, struct location loc)
+{
+        seekline(b, loc.line);
+        textbuffer_remove(b, loc, str_width(&b->current->data) - loc.col);
+}
+
+void
+textbuffer_delete_marker(struct textbuffer *b, struct location *m)
+{
+        // TODO
+}
+
+struct location const *
+textbuffer_new_marker(struct textbuffer *b, struct location loc)
+{
+        if (b->markers.count == b->markers_allocated) {
+                struct location *m = alloc(sizeof *m);
+                *m = loc;
+                vec_push(b->markers, m);
+                ++b->markers_allocated;
+                return m;
+        } else {
+                *b->markers.items[b->markers.count++] = loc;
+                return *vec_last(b->markers);
+        }
 }
 
 static bool
@@ -306,7 +467,7 @@ TEST(create)
 {
         struct textbuffer b = textbuffer_new();
 
-        claim(b.count == 1);
+        claim(b.bytes == 0);
         claim(b.line == 0);
         claim(b.current != NULL);
         claim(b.current == b.first);
@@ -319,11 +480,11 @@ TEST(insert)
 
         struct location loc = { 0, 0 };
 
-        loc = textbuffer_insert(&b, loc, "one\ntwo\nthree");
-        claim(b.count == 3);
+        textbuffer_insert(&b, &loc, "one\ntwo\nthree");
+        claim(b.lines == 3);
 
-        textbuffer_insert(&b, loc, "\nfour");
-        claim(b.count == 4);
+        textbuffer_insert(&b, &loc, "\nfour");
+        claim(b.lines == 4);
 
         claim(contentsequal(&b, "one\ntwo\nthree\nfour\n"));
 }
@@ -334,7 +495,7 @@ TEST(remove)
 
         struct location loc = { 0, 0 };
 
-        textbuffer_insert(&b, loc, "one\ntwo\nthree");
+        textbuffer_insert(&b, &loc, "one\ntwo\nthree");
 
         loc.line = 1;
         loc.col = 2;
@@ -350,7 +511,7 @@ TEST(remove_line)
 
         struct location loc = { 0, 0 };
 
-        textbuffer_insert(&b, loc, "one\ntwo\nthree");
+        textbuffer_insert(&b, &loc, "one\ntwo\nthree");
 
         textbuffer_remove_line(&b, 2);
         claim(contentsequal(&b, "one\ntwo\n"));
@@ -365,7 +526,7 @@ TEST(line_width)
 
         struct location loc = { 0, 0 };
 
-        textbuffer_insert(&b, loc, "foo\nfoobar\nfoobarbaz");
+        textbuffer_insert(&b, &loc, "foo\nfoobar\nfoobarbaz");
 
         claim(textbuffer_line_width(&b, 0) == 3);
         claim(textbuffer_line_width(&b, 1) == 6);
@@ -378,11 +539,63 @@ TEST(move_backward)
 
         struct location loc = { 0, 0 };
 
-        textbuffer_insert(&b, loc, "line one\nline two");
+        textbuffer_insert(&b, &loc, "line one\nline two");
 
         struct location c = { 1, 2 }; // just before the 'n' in "line two"
-        c = textbuffer_move_backward(&b, c, 4);
+        claim(textbuffer_move_backward(&b, &c, 4) == 4);
 
         claim(c.line == 0);
         claim(c.col == 7);
+}
+
+TEST(insert_n)
+{
+        struct textbuffer b = textbuffer_new();
+
+        struct location loc = { 0, 0 };
+
+        textbuffer_insert(&b, &loc, "line one\nline two");
+
+        struct location c = { 1, 2 }; // just before the 'n' in "line two"
+
+        char data[] = { 'A', 'B', 'C' };
+        textbuffer_insert_n(&b, &c, data, 3);
+
+        claim(contentsequal(&b, "line one\nliABCne two\n"));
+}
+
+TEST(history_combined)
+{
+        struct textbuffer b = textbuffer_new();
+
+        struct location loc = { 0, 0 };
+
+        textbuffer_insert(&b, &loc, "one\ntwo\nthree");
+        claim(b.lines == 3);
+
+        textbuffer_insert(&b, &loc, "\nfour");
+        claim(b.lines == 4);
+
+        claim(contentsequal(&b, "one\ntwo\nthree\nfour\n"));
+
+        printf("history length = %d\n", (int) vec_len(b.history));
+        claim(vec_len(b.history) == 1);
+        claim(vec_get(b.history, 0)->type == EDIT_INSERTION);
+
+        char const *inserted = "one\ntwo\nthree\nfour";
+        claim(strncmp(inserted, vec_get(b.history, 0)->data.items, strlen(inserted)) == 0);
+}
+
+TEST(large_history)
+{
+        struct textbuffer b = textbuffer_new();
+        struct location loc = { 0, 0 };
+
+        for (int i = 0; i < 1000000; ++i) {
+                textbuffer_insert(&b, &loc, "one\ntwo\nthree");
+        }
+
+        printf("count = %d\n", (int) b.history.count);
+        claim(b.history.count == 1);
+        claim(b.history.items[0].data.count > 10000000);
 }

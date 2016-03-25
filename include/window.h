@@ -13,6 +13,7 @@ struct window {
         int height;  // height in rows
         int width;   // width in columns
         bool force_redraw;
+        bool insert_mode;
         struct window *parent;
         union {
                 struct {
@@ -43,6 +44,12 @@ window_new(
         int width,
         int height
 );
+
+struct window *
+window_next(struct window *);
+
+struct window *
+window_prev(struct window *);
 
 void
 window_grow_y(struct window *w, int dy);

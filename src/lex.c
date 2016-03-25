@@ -297,6 +297,11 @@ lexexpr(void)
                 case '\\':
                            nextchar();
                            if (*chars == '\0') goto unterminated;
+                           if (*chars == 'n') {
+                                   nextchar();
+                                   vec_push(e, '\n');
+                                   break;
+                           }
                            // fallthrough
                 default:
                            vec_push(e, nextchar());
@@ -316,8 +321,7 @@ unterminated:
 static struct token
 lexspecialstr(void)
 {
-        struct token special;
-        special.type = TOKEN_SPECIAL_STRING;
+        struct token special = mktoken(TOKEN_SPECIAL_STRING);
         vec_init(special.strings);
         vec_init(special.expressions);
         vec_init(special.locations);
@@ -337,6 +341,11 @@ start:
                 case '\\':
                            nextchar();
                            if (*chars == '\0') goto unterminated;
+                           if (*chars == 'n') {
+                                   nextchar();
+                                   vec_push(str, '\n');
+                                   break;
+                           }
                            // fallthrough
                 default:
                            vec_push(str, nextchar());
@@ -551,6 +560,7 @@ lex_init(void)
         loc = (struct location) { 0, 0 };
         keep_next_newline = false;
         vec_init(states);
+        chars = NULL;
 }
 
 void

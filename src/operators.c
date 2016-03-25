@@ -10,12 +10,12 @@ static struct value
 str_concat(struct value const *s1, struct value const *s2)
 {
         size_t n = s1->bytes + s2->bytes;
-        char *new = alloc(n);
+        struct string *s = value_string_alloc(n);
 
-        memcpy(new, s1->string, s1->bytes);
-        memcpy(new + s1->bytes, s2->string, s2->bytes);
+        memcpy(s->data, s1->string, s1->bytes);
+        memcpy(s->data + s1->bytes, s2->string, s2->bytes);
 
-        return STRINGN(new, n);
+        return STRING(s->data, n, s);
 }
 
 struct value

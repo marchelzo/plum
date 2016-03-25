@@ -18,7 +18,6 @@ ifndef RELEASE
         CFLAGS += -fsanitize=leak
         CFLAGS += -O0
 else
-	CFLAGS += -flto
         CFLAGS += -Ofast
         CFLAGS += -DPLUM_RELEASE
 endif

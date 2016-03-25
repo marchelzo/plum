@@ -66,6 +66,65 @@ window_new(
         w->width = width;
         w->height = height;
         w->force_redraw = true;
+        w->insert_mode = false;
+
+        return w;
+}
+
+struct window *
+window_next(struct window *w)
+{
+        struct window *p = w->parent;
+
+        if (p == NULL) {
+                return w;
+        }
+
+        if (p->one == w) {
+                return p->two;
+        }
+
+        do {
+                p = p->parent;
+                w = w->parent;
+        } while (p != NULL && p->two == NULL);
+
+        if (p != NULL) {
+                return p->two;
+        }
+
+        while (w->type != WINDOW_WINDOW) {
+                w = w->one;
+        }
+
+        return w;
+}
+
+struct window *
+window_prev(struct window *w)
+{
+        struct window *p = w->parent;
+
+        if (p == NULL) {
+                return w;
+        }
+
+        if (p->one == w) {
+                return p->two;
+        }
+
+        do {
+                p = p->parent;
+                w = w->parent;
+        } while (p != NULL && p->two == NULL);
+
+        if (p != NULL) {
+                return p->two;
+        }
+
+        while (w->type != WINDOW_WINDOW) {
+                w = w->one;
+        }
 
         return w;
 }

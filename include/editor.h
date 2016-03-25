@@ -10,12 +10,17 @@ struct editor {
         uintmax_t nextbufid;
         vec(struct buffer) buffers;
 
+        struct {
+                struct window *window;
+                struct buffer *buffer;
+        } console;
+
         struct window *root_window;
         struct window *current_window;
 };
 
-struct editor
-editor_new(int lines, int cols);
+void
+editor_init(struct editor *e, int lines, int cols);
 
 unsigned
 editor_create_file_buffer(struct editor *e, char const *path);
@@ -34,5 +39,8 @@ editor_handle_text_input(struct editor *e, char const *s);
 
 void
 editor_handle_key_input(struct editor *e, char const *s);
+
+void
+editor_do_update(struct editor *e);
 
 #endif

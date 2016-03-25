@@ -17,9 +17,10 @@
 #include "log.h"
 #include "operators.h"
 #include "builtin_functions.h"
-#include "buffer_functions.h"
+#include "editor_functions.h"
 #include "array_methods.h"
 #include "string_methods.h"
+#include "buffer.h"
 #include "tags.h"
 
 #define READVALUE(s) (memcpy(&s, ip, sizeof s), (ip += sizeof s))
@@ -41,12 +42,14 @@ struct variable {
 static struct variable *captured_chain;
 
 static jmp_buf jb;
+static bool jb_is_set;
 
 static struct variable **vars;
 static vec(struct value) stack;
 static vec(char *) callstack;
 static vec(size_t) sp_stack;
 static vec(struct value *) targetstack;
+static vec(char) output_buffer;
 static char *ip;
 
 static int symbolcount = 0;
@@ -61,18 +64,39 @@ static struct {
         char const *name;
         struct value (*fn)(value_vector *);
 } builtins[] = {
-        { .module = NULL,     .name = "print",    .fn = builtin_print           },
-        { .module = NULL,     .name = "read",     .fn = builtin_read            },
-        { .module = NULL,     .name = "rand",     .fn = builtin_rand            },
-        { .module = NULL,     .name = "int",      .fn = builtin_int             },
-        { .module = NULL,     .name = "str",      .fn = builtin_str             },
-        { .module = NULL,     .name = "bool",     .fn = builtin_bool            },
-        { .module = NULL,     .name = "min",      .fn = builtin_min             },
-        { .module = NULL,     .name = "max",      .fn = builtin_max             },
-        { .module = "buffer", .name = "insert",   .fn = builtin_buffer_insert   },
-        { .module = "buffer", .name = "remove",   .fn = builtin_buffer_remove   },
-        { .module = "buffer", .name = "forward",  .fn = builtin_buffer_forward  },
-        { .module = "buffer", .name = "backward", .fn = builtin_buffer_backward },
+        { .module = NULL,     .name = "print",             .fn = builtin_print                     },
+        { .module = NULL,     .name = "read",              .fn = builtin_read                      },
+        { .module = NULL,     .name = "rand",              .fn = builtin_rand                      },
+        { .module = NULL,     .name = "int",               .fn = builtin_int                       },
+        { .module = NULL,     .name = "str",               .fn = builtin_str                       },
+        { .module = NULL,     .name = "bool",              .fn = builtin_bool                      },
+        { .module = NULL,     .name = "min",               .fn = builtin_min                       },
+        { .module = NULL,     .name = "max",               .fn = builtin_max                       },
+        { .module = "buffer", .name = "mapNormal",         .fn = builtin_editor_map_normal         },
+        { .module = "buffer", .name = "mapInsert",         .fn = builtin_editor_map_insert         },
+        { .module = "buffer", .name = "insert",            .fn = builtin_editor_insert             },
+        { .module = "buffer", .name = "remove",            .fn = builtin_editor_remove             },
+        { .module = "buffer", .name = "cutLine",           .fn = builtin_editor_cut_line           },
+        { .module = "buffer", .name = "forward",           .fn = builtin_editor_forward            },
+        { .module = "buffer", .name = "backward",          .fn = builtin_editor_backward           },
+        { .module = "buffer", .name = "startOfLine",       .fn = builtin_editor_start_of_line      },
+        { .module = "buffer", .name = "endOfLine",         .fn = builtin_editor_end_of_line        },
+        { .module = "buffer", .name = "getLine",           .fn = builtin_editor_get_line           },
+        { .module = "buffer", .name = "line",              .fn = builtin_editor_line               },
+        { .module = "buffer", .name = "column",            .fn = builtin_editor_column             },
+        { .module = "buffer", .name = "lines",             .fn = builtin_editor_lines              },
+        { .module = "buffer", .name = "prevLine",          .fn = builtin_editor_prev_line          },
+        { .module = "buffer", .name = "nextLine",          .fn = builtin_editor_next_line          },
+        { .module = "buffer", .name = "scrollDown",        .fn = builtin_editor_scroll_down        },
+        { .module = "buffer", .name = "scrollUp",          .fn = builtin_editor_scroll_up          },
+        { .module = "buffer", .name = "moveRight",         .fn = builtin_editor_move_right         },
+        { .module = "buffer", .name = "moveLeft",          .fn = builtin_editor_move_left          },
+        { .module = "buffer", .name = "insertMode",        .fn = builtin_editor_insert_mode        },
+        { .module = "buffer", .name = "normalMode",        .fn = builtin_editor_normal_mode        },
+        { .module = "window", .name = "growVertically",    .fn = builtin_editor_grow_vertically    },
+        { .module = "window", .name = "growHorizontally",  .fn = builtin_editor_grow_horizontally  },
+        { .module = "editor", .name = "nextWindow",        .fn = builtin_editor_next_window        },
+        { .module = "editor", .name = "prevWindow",        .fn = builtin_editor_prev_window        },
 };
 
 static int builtin_count = sizeof builtins / sizeof builtins[0];
@@ -92,7 +116,7 @@ newvar(struct variable *next)
 /*
  * This relies on no other symbols being introduced to the compiler
  * up until the point that this is called. i.e., it assumes that the
- * first built-in function should have symbol 0. I think this ok.
+ * first built-in function should have symbol 0. I think this is ok.
  */
 static void
 add_builtins(void)
@@ -103,7 +127,6 @@ add_builtins(void)
         }
 
         for (int i = 0; i < builtin_count; ++i) {
-                printf("adding builtin %s::%s\n", builtins[i].module ? builtins[i].module : "", builtins[i].name);
                 compiler_introduce_symbol(builtins[i].module, builtins[i].name);
                 vars[i]->value = BUILTIN(builtins[i].fn);
         }
@@ -168,6 +191,7 @@ vm_exec(char *code)
         int n, index, tag, l, r;
 
         struct value left, right, v, key, value, container, subscript, *vp;
+        struct string *str;
 
         value_vector args;
         struct value (*func)(struct value *, value_vector *);
@@ -178,6 +202,7 @@ vm_exec(char *code)
                 switch (*ip++) {
                 CASE(PUSH_VAR)
                         READVALUE(s);
+                        LOG("new var for %d", (int) s);
                         vars[s] = newvar(vars[s]);
                         break;
                 CASE(POP_VAR)
@@ -293,6 +318,7 @@ vm_exec(char *code)
                                 vm_panic("failed to match %s against the tag %s", value_show(top()), tags_name(tag));
                         } else {
                                 top()->tags = tags_pop(top()->tags);
+                                top()->type &= ~VALUE_TAGGED;
                         }
                         break;
                 CASE(BAD_MATCH)
@@ -370,7 +396,7 @@ vm_exec(char *code)
                         break;
                 CASE(STRING)
                         n = strlen(ip);
-                        push(STRINGN(ip, n));
+                        push(STRING_NOGC(ip, n));
                         ip += n + 1;
                         break;
                 CASE(TAG)
@@ -426,16 +452,16 @@ vm_exec(char *code)
                                 k += stack.items[index].bytes;
                         }
                         LOG("total bytes: %d", (int) k);
-                        v = STRINGN(alloc(k), k);
+                        str = value_string_alloc(k);
+                        v = STRING(str->data, k, str);
                         k = 0;
                         for (index = stack.count - n; index < stack.count; ++index) {
                                 LOG("adding string: %s", value_show(&stack.items[index]));
-                                memcpy(v.string + k, stack.items[index].string, stack.items[index].bytes);
+                                memcpy(str->data + k, stack.items[index].string, stack.items[index].bytes);
                                 k += stack.items[index].bytes;
                         }
                         stack.count -= n - 1;
                         stack.items[stack.count - 1] = v;
-                        LOG("constructed string: %s", value_show(&v));
                         break;
                 CASE(RANGE)
                         READVALUE(l);
@@ -446,14 +472,14 @@ vm_exec(char *code)
                                 vm_panic("non-integer used as bound in range");
                         }
                         v = ARRAY(value_array_new());
-                        vec_reserve(*v.array, abs(right.integer - left.integer) + 2);
+                        value_array_reserve(v.array, abs(right.integer - left.integer) + 2);
                         if (left.integer < right.integer) {
                                 for (int i = left.integer + l; i <= right.integer + r; ++i) {
-                                        vec_push(*v.array, INTEGER(i));
+                                        v.array->items[v.array->count++] = INTEGER(i);
                                 }
                         } else {
                                 for (int i = left.integer - l; i >= right.integer - r; --i) {
-                                        vec_push(*v.array, INTEGER(i));
+                                        v.array->items[v.array->count++] = INTEGER(i);
                                 }
                         }
                         push(v);
@@ -725,6 +751,7 @@ vm_exec(char *code)
                         value = peek();
 
                         if (value.type == VALUE_STRING) {
+                                ++gc_prevent;
                                 func = get_string_method(ip);
                                 if (func == NULL) {
                                         vm_panic("call to non-existent string method: %s", ip);
@@ -741,10 +768,13 @@ vm_exec(char *code)
                                 v = func(&value, &args);
                                 stack.count -= n;
                                 stack.items[stack.count - 1] = v;
+                                --gc_prevent;
+                                gc_alloc(0);
                                 break;
                         }
 
                         if (value.type == VALUE_ARRAY) {
+                                ++gc_prevent;
                                 func = get_array_method(ip);
                                 if (func == NULL) {
                                         vm_panic("call to non-existent array method: %s", ip);
@@ -762,6 +792,8 @@ vm_exec(char *code)
                                 v = func(&value, &args);
                                 stack.count -= n;
                                 stack.items[stack.count - 1] = v;
+                                --gc_prevent;
+                                gc_alloc(0);
                                 break;
                         }
 
@@ -835,6 +867,7 @@ vm_init(void)
         vec_init(stack);
         vec_init(callstack);
         vec_init(targetstack);
+        vec_init(output_buffer);
         vars = NULL;
         symbolcount = 0;
 
@@ -858,20 +891,29 @@ vm_panic(char const *fmt, ...)
 
         va_end(ap);
 
-        longjmp(jb, 1);
+        if (jb_is_set) {
+                longjmp(jb, 1);
+        } else {
+                err_msg = err_buf;
+                longjmp(buffer_err_jb, 1);
+        }
 }
 
 bool
 vm_execute_file(char const *path)
 {
-        char const *source = slurp(path);
+        char *source = slurp(path);
         if (source == NULL) {
                 err_msg = "failed to read source file";
+                return false;
         }
 
         filename = path;
 
-        return vm_execute(source);
+        bool success = vm_execute(source);
+        free(source);
+
+        return success;
 }
 
 bool
@@ -879,11 +921,10 @@ vm_execute(char const *source)
 {
         int oldsymcount = symbolcount;
 
-        LOG("EXECUTING SOURCE: '%s'", source);
-
         char *code = compiler_compile_source(source, &symbolcount, filename);
         if (code == NULL) {
                 err_msg = compiler_error();
+                LOG("compiler error was: %s", err_msg);
                 return false;
         }
 
@@ -893,11 +934,15 @@ vm_execute(char const *source)
                 vars[i] = NULL;
         }
 
+        jb_is_set = true;
         if (setjmp(jb) != 0) {
                 vec_empty(stack);
                 err_msg = err_buf;
+                jb_is_set = false;
                 return false;
         }
+
+        jb_is_set = false;
 
         vm_exec(code);
 
@@ -905,7 +950,7 @@ vm_execute(char const *source)
 }
 
 struct value
-vm_eval_function(struct value const * restrict f, struct value const * restrict v)
+vm_eval_function(struct value const *f, struct value const *v)
 {
         if (f->type == VALUE_FUNCTION) {
                 vec_push(callstack, &halt);
@@ -920,11 +965,11 @@ vm_eval_function(struct value const * restrict f, struct value const * restrict 
                         vars[f->bound_symbols.items[i]] = vars[f->bound_symbols.items[i]]->prev;
                 }
 
-                if (f->param_symbols.count >= 1) {
+                if (f->param_symbols.count >= 1 && v != NULL) {
                         vars[f->param_symbols.items[0]]->value = *v;
                 }
 
-                for (int i = 1; i < f->param_symbols.count; ++i) {
+                for (int i = 1 - !v; i < f->param_symbols.count; ++i) {
                         vars[f->param_symbols.items[i]]->value = NIL;
                 }
 
@@ -997,19 +1042,17 @@ vm_eval_function2(struct value *f, struct value const *v1, struct value const *v
 void
 vm_mark(void)
 {
-        LOG("STARTING VM MARK");
         for (int i = 0; i < symbolcount; ++i) {
-                LOG("  MARKING STACK %d", i);
                 for (struct variable *v = vars[i]; v != NULL; v = v->next) {
                         value_mark(&v->value);
                 }
-                LOG("  DONE MARKING STACK %d", i);
         }
-        LOG("MARKING TEMPORARY STACK");
+
         for (int i = 0; i < stack.count; ++i) {
                 value_mark(&stack.items[i]);
         }
-        LOG("DONE VM MARK");
+
+        buffer_mark_values();
 }
 
 void
@@ -1044,6 +1087,21 @@ vm_sweep_variables(void)
                 }
                 var = next;
         }
+}
+
+void
+vm_append_output(char const *s, int n)
+{
+        vec_push_n(output_buffer, s, n);
+}
+
+char *
+vm_get_output(void)
+{
+        vec_push(output_buffer, '\0');
+        char *output = output_buffer.items;
+        output_buffer.count = '\0';
+        return output;
 }
 
 TEST(let)

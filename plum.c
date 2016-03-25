@@ -9,6 +9,7 @@
 #include <tickit.h>
 
 #include "panic.h"
+#include "config.h"
 #include "editor.h"
 #include "buffer.h"
 #include "render.h"
@@ -19,6 +20,13 @@ noreturn static void
 quit(struct editor *e)
 {
         editor_destroy_all_buffers(e);
+
+        /*
+         * Restore the cursor shape if it's been changed.
+         */
+        write(1, INSERT_END_STRING, sizeof INSERT_END_STRING - 1);
+
+        endwin();
         exit(EXIT_SUCCESS);
 }
 
@@ -29,7 +37,7 @@ handle_term_input_event(TickitTerm *term, TickitEventType _, void *info, void *c
         struct editor *e = ctx;
 
         if (event->type == TICKIT_KEYEV_KEY) {
-                if (strcmp(event->str, "C-e") == 0) {
+                if (strcmp(event->str, "C-d") == 0) {
                         quit(e);
                 } else {
                         editor_handle_key_input(e, event->str);
@@ -50,7 +58,7 @@ int main(void)
 
         initscr();
         noecho();
-        cbreak();
+        raw();
         refresh();
 
         TickitTerm *term = tickit_term_open_stdio();
@@ -60,35 +68,25 @@ int main(void)
 
         tickit_term_await_started_msec(term, 100);
         tickit_term_setctl_int(term, TICKIT_TERMCTL_CURSORVIS, 1);
-        //tickit_term_setctl_int(term, TICKIT_TERMCTL_ALTSCREEN, 1);
 
         int lines, cols;
         tickit_term_get_size(term, &lines, &cols);
 
-        struct editor e = editor_new(lines, cols);
+        struct editor e;
+        editor_init(&e, lines, cols);
+
         tickit_term_bind_event(term, TICKIT_EV_KEY, 0, handle_term_input_event, &e);
 
-        struct window *w = e.root_window;
-
-        window_vsplit(w);
-        window_hsplit(w->top);
-        //window_grow_x(w->top->left, 30);
-        window_grow_y(w->top->left, 10);
-
-        e.current_window = w->top->left;
+        assert(e.current_window->type == WINDOW_WINDOW);
 
         unsigned b1 = editor_create_file_buffer(&e, "foobar.txt");
-        unsigned b2 = editor_create_file_buffer(&e, "src/editor.c");
-        //unsigned b3 = editor_create_file_buffer(&e, "bar.txt");
-        unsigned b3 = editor_create_file_buffer(&e, "src/str.c");
-
-        editor_view_buffer(&e, w->top->left, b1);
-        editor_view_buffer(&e, w->top->right, b2);
-        editor_view_buffer(&e, w->bot, b3);
+        editor_view_buffer(&e, e.current_window, b1);
 
         for (;;) {
+                assert(e.root_window != NULL);
                 render(&e, term);
                 tickit_term_input_wait_msec(term, 10);
+                editor_do_update(&e);
         }
 
         return 0;

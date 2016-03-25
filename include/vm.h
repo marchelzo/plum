@@ -105,6 +105,12 @@ noreturn void
 vm_panic(char const *fmt, ...);
 
 void
+vm_append_output(char const *s, int n);
+
+char *
+vm_get_output(void);
+
+void
 vm_mark(void);
 
 void

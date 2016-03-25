@@ -17,6 +17,12 @@ enum {
         EVT_PARENT_SYNCED_BUFFER,
         EVT_TEXT_INPUT,
         EVT_KEY_INPUT,
+        EVT_GROW_X_REQUEST,
+        EVT_GROW_Y_REQUEST,
+        EVT_NEXT_WINDOW_REQUEST,
+        EVT_PREV_WINDOW_REQUEST,
+        EVT_VM_ERROR,
+        EVT_UPDATE,
 };
 
 static inline void
@@ -29,9 +35,11 @@ static inline buffer_event_code
 evt_recv(int fd)
 {
         buffer_event_code code;
+
         if (read(fd, &code, sizeof code) < 0) {
                 panic("read() failed: %s", strerror(errno));
         }
+
         return code;
 }
 

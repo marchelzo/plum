@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include "config.h"
 #include "editor.h"
 #include "alloc.h"
 #include "textbuffer.h"
@@ -25,9 +26,6 @@
 #include "window.h"
 #include "log.h"
 
-/*
- *
- */
 inline static char *
 getdata(struct buffer *b)
 {
@@ -49,14 +47,28 @@ render_window(struct window *w)
 {
         int lines;
         int bytes;
+        int insert_mode;
         struct buffer *b = w->buffer;
 
         pthread_mutex_lock(b->rb_mtx);
 
+        assert(b != NULL);
         char const *src = getdata(b);
+        assert(src != NULL);
 
         src = readint(src, &w->cursor.y);
         src = readint(src, &w->cursor.x);
+        src = readint(src, &insert_mode);
+
+        if (insert_mode != w->insert_mode) {
+                if (insert_mode) {
+                        write(1, INSERT_BEGIN_STRING, sizeof INSERT_BEGIN_STRING - 1);
+                } else {
+                        write(1, INSERT_END_STRING, sizeof INSERT_END_STRING - 1);
+                }
+        }
+
+        w->insert_mode = insert_mode;
 
         src = readint(src, &lines);
         for (int line = 0; line < lines; ++line) {
@@ -109,11 +121,16 @@ need_redraw(struct window *w)
 bool
 render(struct editor *e)
 {
+        assert(e->root_window != NULL);
         if (need_redraw(e->root_window)) {
                 LOG("doing a redraw...");
                 erase();
                 draw(e->root_window);
-                move(e->current_window->cursor.y, e->current_window->cursor.x);
+                
+                int y = e->current_window->y + e->current_window->cursor.y;
+                int x = e->current_window->x + e->current_window->cursor.x;
+                move(y, x);
+
                 refresh();
                 return true;
         }

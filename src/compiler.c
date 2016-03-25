@@ -97,6 +97,8 @@ struct state {
         offset_vector match_fails;
         offset_vector match_successes;
 
+        int function_depth;
+
         import_vector imports;
 
         struct scope *global;
@@ -163,8 +165,10 @@ fail(char const *fmt, ...)
         va_list ap;
         va_start(ap, fmt);
 
-        int n = sprintf(err_buf, "CompileError: %s:%d:%d: ", state.filename ? state.filename : "<null>", (int) state.loc.line + 1, (int) state.loc.col + 1);
+        int n = sprintf(err_buf, "CompileError: %s:%d:%d: ", !state.filename ? state.filename : "<null>", (int) state.loc.line + 1, (int) state.loc.col + 1);
         vsnprintf(err_buf + n, sizeof err_buf - n, fmt, ap);
+
+        LOG("Failing with error: %s", err_buf);
 
         va_end(ap);
 
@@ -349,6 +353,8 @@ freshstate(void)
         vec_init(s.imports);
 
         s.global = newscope(global, false);
+
+        s.function_depth = 0;
 
         s.filename = NULL;
         s.loc = (struct location){ 0, 0 };
@@ -786,6 +792,7 @@ emit_function(struct expression const *e)
         vec_init(state.refs);
         state.bound_symbols.items = e->bound_symbols.items;
         state.bound_symbols.count = e->bound_symbols.count;
+        ++state.function_depth;
 
 
         emit_int(e->bound_symbols.count);
@@ -811,7 +818,7 @@ emit_function(struct expression const *e)
         /*
          * Add an implicit 'return nil;' in case the function doesn't explicitly return in its body.
          */
-        emit_statement(&(struct statement){ .type = STATEMENT_RETURN, .return_value = NULL });
+        emit_statement(&(struct statement){ .type = STATEMENT_RETURN, .return_value = NULL, .loc = {42, 42} });
 
         int bytes = state.code.count - size_offset - sizeof (int);
         LOG("bytes in func = %d", bytes);
@@ -830,6 +837,7 @@ emit_function(struct expression const *e)
 
         state.refs = refs_save;
         state.bound_symbols = syms_save;
+        --state.function_depth;
 
         if (e->function_symbol != -1) {
                 emit_instr(INSTR_TARGET_VAR);
@@ -1406,10 +1414,10 @@ emit_assignment(struct expression *target, struct expression const *e, int i)
                 emit_instr(INSTR_TARGET_VAR);
                 emit_symbol(tmp);
                 emit_instr(INSTR_ASSIGN);
-                container = (struct expression){ .type = EXPRESSION_IDENTIFIER, .symbol = tmp, .local = true };
+                container = (struct expression){ .type = EXPRESSION_IDENTIFIER, .symbol = tmp, .local = true, .loc = {42, 42} };
                 for (int j = 0; j < target->elements.count; ++j) {
-                        subscript = (struct expression){ .type = EXPRESSION_INTEGER, .integer = j };
-                        emit_assignment(target->elements.items[j], &(struct expression){ .type = EXPRESSION_SUBSCRIPT, .container = &container, .subscript = &subscript }, i + 1);
+                        subscript = (struct expression){ .type = EXPRESSION_INTEGER, .integer = j, .loc = {42, 42} };
+                        emit_assignment(target->elements.items[j], &(struct expression){ .type = EXPRESSION_SUBSCRIPT, .container = &container, .subscript = &subscript, .loc = {42, 42}}, i + 1);
                         emit_instr(INSTR_POP);
                 }
                 emit_instr(INSTR_POP_VAR);
@@ -1702,6 +1710,9 @@ emit_statement(struct statement const *s)
                 emit_instr(INSTR_POP);
                 break;
         case STATEMENT_RETURN:
+                if (state.function_depth == 0) {
+                        fail("invalid 'return' statement (not inside of a function)");
+                }
                 if (s->return_value != NULL) {
                         emit_expression(s->return_value);
                 } else {
@@ -1867,6 +1878,7 @@ compiler_init(void)
         global_count = 0;
         global = newscope(NULL, false);
         vec_init(public_symbols);
+        vec_init(modules);
 
         tags_init();
         for (int i = 0; i < tagcount; ++i) {
@@ -1883,8 +1895,6 @@ compiler_init(void)
 void
 compiler_introduce_symbol(char const *module, char const *name)
 {
-        builtin_count += 1;
-
         struct scope *s;
         if (module == NULL) {
                 s = global;

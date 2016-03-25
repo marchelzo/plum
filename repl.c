@@ -12,8 +12,9 @@ main(void)
         vm_init();
         while (fputs("> ", stdout), fflush(stdout), (fgets(buffer, 8192, stdin) != NULL) && sprintf(stmtbuf, "print(%s);", buffer)) {
                 if (vm_execute(stmtbuf)) {
-                        // nothing to do
+                        fputs(vm_get_output(), stdout);
                 } else if ((strstr(vm_error(), "ParseError") != NULL) && vm_execute(buffer)) {
+                        fputs(vm_get_output(), stdout);
                         printf("ok\n");
                 } else {
                         printf("%s\n", vm_error());

@@ -101,7 +101,9 @@ array_slice(struct value *array, value_vector *args)
         n = min(n, array->array->count - s);
 
         struct value result = ARRAY(value_array_new());
-        vec_push_n(*result.array, array->array->items + s, n);
+        value_array_reserve(result.array, n);
+        memmove(result.array->items, array->array->items + s, n * sizeof (struct value));
+        result.array->count = n;
 
         return result;
 }
@@ -168,7 +170,9 @@ array_take_while(struct value *array, value_vector *args)
         }
 
         struct value result = ARRAY(value_array_new());
-        vec_push_n(*result.array, array->array->items, keep);
+        value_array_reserve(result.array, keep);
+        memmove(result.array->items, array->array->items, keep * sizeof (struct value));
+        result.array->count = keep;
 
         return result;
 }
@@ -223,9 +227,11 @@ array_drop_while(struct value *array, value_vector *args)
                 }
         }
 
+        int n = array->array->count - drop;
         struct value result = ARRAY(value_array_new());
-
-        vec_push_n(*result.array, array->array->items + drop, array->array->count - drop);
+        value_array_reserve(result.array, n);
+        memmove(result.array->items, array->array->items + drop, n * sizeof (struct value));
+        result.array->count = n;
 
         return result;
 }
@@ -265,7 +271,9 @@ array_take(struct value *array, value_vector *args)
 
         int count = min(n.integer, array->array->count);
 
-        vec_push_n(*result.array, array->array->items, count);
+        value_array_reserve(result.array, count);
+        memmove(result.array->items, array->array->items, count * sizeof (struct value));
+        result.array->count = count;
 
         return result;
 }
@@ -309,7 +317,9 @@ array_drop(struct value *array, value_vector *args)
         int d = min(n.integer, array->array->count);
         int count = array->array->count - d;
 
-        vec_push_n(*result.array, array->array->items + d, count);
+        value_array_reserve(result.array, count);
+        memmove(result.array->items, array->array->items + d, count * sizeof (struct value));
+        result.array->count = count;
 
         return result;
 }
@@ -357,7 +367,7 @@ array_consume_while(struct value *array, value_vector *args)
         for (;;) {
                 struct value v = vm_eval_function(&f, NULL);
                 if (value_apply_predicate(&p, &v)) {
-                        vec_push(*array->array, v);
+                        value_array_push(array->array, v);
                 } else {
                         break;
                 }
@@ -385,16 +395,16 @@ array_group_by(struct value *array, value_vector *args)
                 struct value group = ARRAY(value_array_new());
                 struct value e = array->array->items[i];
                 struct value v = value_apply_callable(&f, &e);
-                vec_push(*group.array, e);
+                value_array_push(group.array, e);
                 while (i + 1 < array->array->count) {
                         struct value v2 = value_apply_callable(&f, &array->array->items[i + 1]);
                         if (value_test_equality(&v, &v2)) {
-                                vec_push(*group.array, array->array->items[++i]);
+                                value_array_push(group.array, array->array->items[++i]);
                         } else {
                                 break;
                         }
                 }
-                vec_push(*result.array, group);
+                value_array_push(result.array, group);
         }
 
         return result;
@@ -411,11 +421,11 @@ array_group(struct value *array, value_vector *args)
 
         for (int i = 0; i < array->array->count; ++i) {
                 struct value group = ARRAY(value_array_new());
-                vec_push(*group.array, array->array->items[i]);
+                value_array_push(group.array, array->array->items[i]);
                 while (i + 1 < array->array->count && value_test_equality(&array->array->items[i], &array->array->items[i + 1])) {
-                        vec_push(*group.array, array->array->items[++i]);
+                        value_array_push(group.array, array->array->items[++i]);
                 }
-                vec_push(*result.array, group);
+                value_array_push(result.array, group);
         }
 
         return result;
@@ -436,7 +446,7 @@ array_intersperse(struct value *array, value_vector *args)
         }
 
         int newcount = 2 * n + 1;
-        vec_reserve(*array->array, newcount);
+        value_array_reserve(array->array, newcount);
         memcpy(array->array->items + n + 1, array->array->items + 1, n * sizeof (struct value));
 
         int lo = 1;
@@ -598,7 +608,7 @@ static struct value
 array_shuffle(struct value *array, value_vector *args)
 {
         if (args->count != 0) {
-                vm_panic("the shuffle method on arrays expects no arguments but got %zu", args->count);
+                vm_panic("the shuffle! method on arrays expects no arguments but got %zu", args->count);
         }
 
         struct value t;
@@ -953,7 +963,7 @@ array_push(struct value *array, value_vector *args)
                 vm_panic("the push method on arrays expects 1 argument but got %zu", args->count);
         }
 
-        vec_push(*array->array, args->items[0]);
+        value_array_push(array->array, args->items[0]);
 
         return NIL;
 }
@@ -981,7 +991,7 @@ array_insert(struct value *array, value_vector *args)
                 vm_panic("array index passed to insert is out of range: %d", index);
         }
 
-        vec_push(*array->array, NIL);
+        value_array_push(array->array, NIL);
 
         memmove(array->array->items + index + 1, array->array->items + index, (array->array->count - index - 1) * sizeof (struct value));
         array->array->items[index] = v;
@@ -996,7 +1006,7 @@ array_pop(struct value *array, value_vector *args)
                 if (array->array->count == 0) {
                         vm_panic("attempt to pop from an empty array");
                 }
-                return *vec_pop(*array->array);
+                return array->array->items[--array->array->count];
         }
 
         if (args->count == 1) {
@@ -1053,8 +1063,8 @@ static struct {
         { .name = "scanLeft!",    .func = array_scan_left      },
         { .name = "scanRight",    .func = array_scanned_right  },
         { .name = "scanRight!",   .func = array_scan_right     },
-        { .name = "shuffle!",     .func = array_shuffle        },
         { .name = "shuffle",      .func = array_shuffled       },
+        { .name = "shuffle!",     .func = array_shuffle        },
         { .name = "slice",        .func = array_slice          },
         { .name = "slice!",       .func = array_slice_mut      },
         { .name = "sort",         .func = array_sorted         },

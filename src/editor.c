@@ -6,6 +6,57 @@
 #include "vec.h"
 #include "protocol.h"
 #include "window.h"
+#include "log.h"
+
+inline static struct buffer *
+newbuffer(struct editor *e)
+{
+        return vec_push(e->buffers, buffer_new(e->nextbufid++));
+}
+
+/*
+ * Handle an event received from a buffer.
+ */
+static void
+handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
+{
+        static char buf[1024];
+        int bytes;
+        int amount;
+
+        switch (c) {
+        case EVT_GROW_X_REQUEST:
+                amount = recvint(b->read_fd);
+                window_grow_x(b->window, amount);
+                evt_send(b->write_fd, EVT_WINDOW_DIMENSIONS);
+                sendint(b->write_fd, b->window->height);
+                sendint(b->write_fd, b->window->width);
+                break;
+        case EVT_GROW_Y_REQUEST:
+                amount = recvint(b->read_fd);
+                window_grow_y(b->window, amount);
+                evt_send(b->write_fd, EVT_WINDOW_DIMENSIONS);
+                sendint(b->write_fd, b->window->height);
+                sendint(b->write_fd, b->window->width);
+                break;
+        case EVT_NEXT_WINDOW_REQUEST:
+                if (b->window == e->current_window) {
+                        e->current_window = window_next(b->window);
+                }
+                break;
+        case EVT_PREV_WINDOW_REQUEST:
+                if (b->window == e->current_window) {
+                        e->current_window = window_prev(b->window);
+                }
+        case EVT_VM_ERROR:
+                bytes = recvint(b->read_fd);
+                read(b->read_fd, buf, bytes);
+                evt_send(e->console.buffer->write_fd, EVT_VM_ERROR);
+                sendint(e->console.buffer->write_fd, bytes);
+                write(e->console.buffer->write_fd, buf, bytes);
+                break;
+        }
+}
 
 /*
  * Binary search for a buffer given a buffer id.
@@ -32,6 +83,26 @@ findbuffer(struct editor *e, unsigned id)
 }
 
 /*
+ * Check the pipe of each buffer process to see if any of them have
+ * sent any data to us.
+ */
+static void
+handle_events(struct editor *e)
+{
+        int n = vec_len(e->buffers);
+
+        buffer_event_code c;
+        for (int i = 0; i < n; ++i) {
+                if (read(vec_get(e->buffers, i)->read_fd, &c, sizeof c) == 1) {
+                        handle_event(e, c, vec_get(e->buffers, i));
+                } else if (errno != EWOULDBLOCK) {
+                        panic("read() failed: %s", strerror(errno));
+                }
+        }
+}
+
+
+/*
  * Get a pointer to the editor's current buffer.
  */
 inline static struct buffer *
@@ -44,16 +115,30 @@ current_buffer(struct editor const *e)
 /*
  * Create a new editor with one root window and no open buffers.
  */
-struct editor
-editor_new(int lines, int cols)
+void
+editor_init(struct editor *e, int lines, int cols)
 {
-        struct editor e;
+        e->nextbufid = 0;
+        vec_init(e->buffers);
 
-        e.nextbufid = 1;
-        e.root_window = window_new(NULL, 0, 0, cols, lines);
-        vec_init(e.buffers);
+        e->root_window = window_new(NULL, 0, 0, cols, lines);
 
-        return e;
+        window_vsplit(e->root_window);
+        window_grow_y(e->root_window->top, lines / 2 - 10);
+
+        e->current_window = e->root_window->top;
+
+        e->console.window = e->root_window->bot;
+        e->console.buffer = newbuffer(e);
+
+        e->console.buffer->window = e->console.window;
+        e->console.window->buffer = e->console.buffer;
+
+        evt_send(e->console.buffer->write_fd, EVT_START_CONSOLE);
+
+        evt_send(e->console.buffer->write_fd, EVT_WINDOW_DIMENSIONS);
+        sendint(e->console.buffer->write_fd, e->console.window->height);
+        sendint(e->console.buffer->write_fd, e->console.window->width);
 }
 
 /*
@@ -65,7 +150,7 @@ editor_new(int lines, int cols)
 unsigned
 editor_create_file_buffer(struct editor *e, char const *path)
 {
-        struct buffer *b = vec_push(e->buffers, buffer_new(e->nextbufid++));
+        struct buffer *b = newbuffer(e);
         int bytes = strlen(path);
 
         evt_send(b->write_fd, EVT_LOAD_FILE);
@@ -88,6 +173,7 @@ editor_view_buffer(struct editor *e, struct window *w, unsigned buf_id)
 
         assert(w->type == WINDOW_WINDOW);
         w->buffer = b;
+        b->window = w;
 
         evt_send(b->write_fd, EVT_WINDOW_DIMENSIONS);
         sendint(b->write_fd, w->height);
@@ -143,10 +229,20 @@ editor_handle_text_input(struct editor *e, char const *s)
 
         int bytes = strlen(s);
 
+        LOG("s = <%s>", s);
+        LOG("bytes = %d", bytes);
+
         /*
          * Send the text to the child process associated with the current buffer.
          */
         evt_send(b->write_fd, EVT_TEXT_INPUT);
         sendint(b->write_fd, bytes);
         write(b->write_fd, s, bytes);
+}
+
+void
+editor_do_update(struct editor *e)
+{
+        handle_events(e);
+        evt_send(e->current_window->buffer->write_fd, EVT_UPDATE);
 }

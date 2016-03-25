@@ -17,12 +17,15 @@ builtin_print(value_vector *args)
         }
 
         if (args->items[0].type == VALUE_STRING) {
-                fwrite(args->items[0].string, 1, args->items[0].bytes, stdout);
+                vm_append_output(args->items[0].string, args->items[0].bytes);
         } else {
-                fputs(value_show(&args->items[0]), stdout);
+                char *s = value_show(&args->items[0]);
+                vm_append_output(s, strlen(s));
+                free(s);
         }
 
-        putchar('\n');
+
+        vm_append_output("\n", 1);
 
         return NIL;
 }
@@ -142,7 +145,7 @@ builtin_str(value_vector *args)
         }
 
         if (args->count == 0) {
-                return STRING("");
+                return STRING_NOGC(NULL, 0);
         }
 
         struct value arg = args->items[0];
@@ -150,7 +153,7 @@ builtin_str(value_vector *args)
                 return arg;
         } else {
                 char const *str = value_show(&arg);
-                return STRING(str);
+                return STRING_CLONE(str, strlen(str));
         }
 }
 
@@ -207,13 +210,11 @@ builtin_max(value_vector *args)
 struct value
 builtin_read(value_vector *args)
 {
-        char *s = malloc(256);
-        if (s == NULL) {
-                printf("out of memory!\n");
-        }
-        if (fgets(s, 256, stdin) != NULL) {
-                s[strcspn(s, "\n")] = '\0';
-                return STRING(s);
+        struct string *str = value_string_alloc(256);
+
+        if (fgets(str->data, 256, stdin) != NULL) {
+                str->data[strcspn(str->data, "\n")] = '\0';
+                return STRING(str->data, strlen(str->data), str);
         } else {
                 return NIL;
         }

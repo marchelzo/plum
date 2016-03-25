@@ -17,5 +17,7 @@ main(int argc, char **argv)
                 return -1;
         }
 
+        fputs(vm_get_output(), stdout);
+
         return 0;
 }

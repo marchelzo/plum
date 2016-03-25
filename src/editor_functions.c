@@ -1,3 +1,4 @@
+#include <limits.h>
 #include <string.h>
 
 #include "vm.h"
@@ -10,7 +11,7 @@
         }
 
 struct value
-builtin_buffer_insert(value_vector *args)
+builtin_editor_insert(value_vector *args)
 {
         ASSERT_ARGC("buffer::insert()", 1);
 
@@ -26,7 +27,7 @@ builtin_buffer_insert(value_vector *args)
 }
 
 struct value
-builtin_buffer_forward(value_vector *args)
+builtin_editor_forward(value_vector *args)
 {
         ASSERT_ARGC("buffer::forward()", 1);
 
@@ -43,7 +44,7 @@ builtin_buffer_forward(value_vector *args)
 }
 
 struct value
-builtin_buffer_backward(value_vector *args)
+builtin_editor_backward(value_vector *args)
 {
         ASSERT_ARGC("buffer::backward()", 1);
 
@@ -60,7 +61,7 @@ builtin_buffer_backward(value_vector *args)
 }
 
 struct value
-builtin_buffer_remove(value_vector *args)
+builtin_editor_remove(value_vector *args)
 {
         ASSERT_ARGC("buffer::remove()", 1);
 
@@ -78,7 +79,7 @@ builtin_buffer_remove(value_vector *args)
 }
 
 struct value
-builtin_buffer_get_line(value_vector *args)
+builtin_editor_get_line(value_vector *args)
 {
         if (args->count != 0 && args->count != 1) {
                 vm_panic("buffer::getLine() expects 0 or 1 arguments but got %zu", args->count);
@@ -113,28 +114,28 @@ builtin_buffer_get_line(value_vector *args)
 }
 
 struct value
-builtin_buffer_line(value_vector *args)
+builtin_editor_line(value_vector *args)
 {
         ASSERT_ARGC("buffer::line()", 0);
         return INTEGER(buffer_line());
 }
 
 struct value
-builtin_buffer_column(value_vector *args)
+builtin_editor_column(value_vector *args)
 {
         ASSERT_ARGC("buffer::column()", 0);
         return INTEGER(buffer_column());
 }
 
 struct value
-builtin_buffer_lines(value_vector *args)
+builtin_editor_lines(value_vector *args)
 {
         ASSERT_ARGC("buffer::lines()", 0);
         return INTEGER(buffer_lines());
 }
 
 struct value
-builtin_buffer_grow_vertically(value_vector *args)
+builtin_editor_grow_vertically(value_vector *args)
 {
         ASSERT_ARGC("buffer::growVertically()", 1);
 
@@ -150,7 +151,7 @@ builtin_buffer_grow_vertically(value_vector *args)
 }
 
 struct value
-builtin_buffer_grow_horizontally(value_vector *args)
+builtin_editor_grow_horizontally(value_vector *args)
 {
         ASSERT_ARGC("buffer::growHorizontally()", 1);
 
@@ -166,7 +167,7 @@ builtin_buffer_grow_horizontally(value_vector *args)
 }
 
 struct value
-builtin_buffer_next_line(value_vector *args)
+builtin_editor_next_line(value_vector *args)
 {
         if (args->count != 0 && args->count != 1) {
                 vm_panic("buffer::nextLine() expects 0 or 1 arguments but got %zu", args->count);
@@ -186,7 +187,7 @@ builtin_buffer_next_line(value_vector *args)
 }
 
 struct value
-builtin_buffer_prev_line(value_vector *args)
+builtin_editor_prev_line(value_vector *args)
 {
         if (args->count != 0 && args->count != 1) {
                 vm_panic("buffer::prevLine() expects 0 or 1 arguments but got %zu", args->count);
@@ -206,7 +207,7 @@ builtin_buffer_prev_line(value_vector *args)
 }
 
 struct value
-builtin_buffer_scroll_up(value_vector *args)
+builtin_editor_scroll_up(value_vector *args)
 {
         if (args->count != 0 && args->count != 1) {
                 vm_panic("buffer::scrollUp() expects 0 or 1 arguments but got %zu", args->count);
@@ -226,7 +227,7 @@ builtin_buffer_scroll_up(value_vector *args)
 }
 
 struct value
-builtin_buffer_scroll_down(value_vector *args)
+builtin_editor_scroll_down(value_vector *args)
 {
         if (args->count != 0 && args->count != 1) {
                 vm_panic("buffer::scrollDown() expects 0 or 1 arguments but got %zu", args->count);
@@ -246,7 +247,7 @@ builtin_buffer_scroll_down(value_vector *args)
 }
 
 struct value
-builtin_buffer_move_right(value_vector *args)
+builtin_editor_move_right(value_vector *args)
 {
         if (args->count != 0 && args->count != 1) {
                 vm_panic("buffer::moveRight() expects 0 or 1 arguments but got %zu", args->count);
@@ -266,7 +267,7 @@ builtin_buffer_move_right(value_vector *args)
 }
 
 struct value
-builtin_buffer_move_left(value_vector *args)
+builtin_editor_move_left(value_vector *args)
 {
         if (args->count != 0 && args->count != 1) {
                 vm_panic("buffer::moveLeft() expects 0 or 1 arguments but got %zu", args->count);
@@ -283,4 +284,129 @@ builtin_buffer_move_left(value_vector *args)
 
                 return INTEGER(buffer_left(amount.integer));
         }
+}
+
+struct value
+builtin_editor_prev_window(value_vector *args)
+{
+        ASSERT_ARGC("editor::prevWindow()", 0);
+        buffer_prev_window();
+        return NIL;
+}
+
+struct value
+builtin_editor_next_window(value_vector *args)
+{
+        ASSERT_ARGC("editor::nextWindow()", 0);
+        buffer_next_window();
+        return NIL;
+}
+
+struct value
+builtin_editor_map_normal(value_vector *args)
+{
+        ASSERT_ARGC("buffer::mapNormal()", 2);
+
+        struct value chord = args->items[0];
+        struct value action = args->items[1];
+
+        if (action.type != VALUE_FUNCTION && action.type != VALUE_BUILTIN_FUNCTION) {
+                vm_panic("the second argument to buffer::mapNormal() must be a function");
+        }
+
+        if (chord.type != VALUE_ARRAY || chord.array->count == 0) {
+                vm_panic("the first argument to buffer::mapNormal() must be a non-empty array of strings");
+        }
+
+        for (int i = 0; i < chord.array->count; ++i) {
+                if (chord.array->items[i].type != VALUE_STRING) {
+                        vm_panic("non-string in the first argument to buffer::mapNormal()");
+                }
+        }
+
+        buffer_map_normal(chord.array, action);
+
+        return NIL;
+}
+
+struct value
+builtin_editor_map_insert(value_vector *args)
+{
+        ASSERT_ARGC("buffer::mapInsert()", 2);
+
+        struct value chord = args->items[0];
+        struct value action = args->items[1];
+
+        if (action.type != VALUE_FUNCTION && action.type != VALUE_BUILTIN_FUNCTION) {
+                vm_panic("the second argument to buffer::mapInsert() must be a function");
+        }
+
+        if (chord.type != VALUE_ARRAY || chord.array->count == 0) {
+                vm_panic("the first argument to buffer::mapInsert() must be a non-empty array of strings");
+        }
+
+        for (int i = 0; i < chord.array->count; ++i) {
+                if (chord.array->items[i].type != VALUE_STRING) {
+                        vm_panic("non-string in the first argument to buffer::mapInsert()");
+                }
+        }
+
+        buffer_map_insert(chord.array, action);
+
+        return NIL;
+}
+
+struct value
+builtin_editor_source(value_vector *args)
+{
+        ASSERT_ARGC("buffer::source()", 1);
+
+        struct value path = args->items[0];
+        if (path.type != VALUE_STRING) {
+                vm_panic("non-string passed to buffer::source()");
+        }
+
+        buffer_source_file(path.string, path.bytes);
+
+        return NIL;
+}
+
+struct value
+builtin_editor_insert_mode(value_vector *args)
+{
+        ASSERT_ARGC("buffer::insertMode()", 0);
+        buffer_insert_mode();
+        return NIL;
+}
+
+struct value
+builtin_editor_normal_mode(value_vector *args)
+{
+        ASSERT_ARGC("buffer::normalMode()", 0);
+        buffer_normal_mode();
+        return NIL;
+}
+
+struct value
+builtin_editor_start_of_line(value_vector *args)
+{
+        ASSERT_ARGC("buffer::startOfLine()", 0);
+        buffer_left(9999);
+        return NIL;
+}
+
+struct value
+builtin_editor_end_of_line(value_vector *args)
+{
+        ASSERT_ARGC("buffer::endOfLine()", 0);
+        buffer_right(9999);
+        return NIL;
+}
+
+struct value
+builtin_editor_cut_line(value_vector *args)
+{
+        ASSERT_ARGC("buffer::cutLine()", 0);
+        buffer_cut_line();
+        return NIL;
 }

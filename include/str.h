@@ -5,13 +5,16 @@
 #include <stdbool.h>
 
 struct str {
-        size_t leftcount;
-        size_t rightcount;
+        int leftcount;
+        int rightcount;
 
-        size_t capacity;
+        int capacity;
 
-        size_t col;
-        size_t cols;
+        int col;
+        int cols;
+
+        int grapheme;
+        int graphemes;
 
         char *left;
         char *right;
@@ -20,16 +23,19 @@ struct str {
 struct str
 str_new(void);
 
-void
-str_insert(struct str *s, size_t i, char const *cstr);
+int
+str_insert(struct str *s, int *i, char const *data);
+
+int
+str_insert_n(struct str *s, int *i, int n, char const *data);
+
+int
+str_remove(struct str *s, int i, int n);
 
 void
-str_insert_n(struct str *s, size_t i, size_t n, char const *cstr);
+str_remove_chars(struct str *s, int col, int n, int *bytes, int *chars);
 
-void
-str_remove(struct str *s, size_t i, size_t n);
-
-size_t
+int
 str_size(struct str const *s);
 
 int
@@ -51,15 +57,27 @@ bool
 str_is_empty(struct str const *s);
 
 struct str
-str_split(struct str *s, size_t i);
+str_split(struct str *s, int i);
 
 void
-str_truncate(struct str *s, size_t i);
+str_truncate(struct str *s, int i);
 
 char *
-str_copy_cols(struct str const *s, char *out, size_t start, size_t n);
+str_cstr(struct str const *s);
 
-size_t
+char *
+str_copy_cols(struct str const *s, char *out, int start, int n);
+
+int
 str_width(struct str const *s);
+
+int
+str_move_left(struct str *s, int *i, int n);
+
+int
+str_move_right(struct str *s, int *i, int n);
+
+int
+str_move_to(struct str *s, int i);
 
 #endif
