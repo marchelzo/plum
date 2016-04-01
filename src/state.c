@@ -41,18 +41,14 @@ mkstate(void)
 inline static void
 markall(struct input_state *s)
 {
-        if (s == NULL) {
-                return;
-        }
+        if (s == NULL)
 
-        if (s->has_action) {
+        if (s->has_action)
                 value_mark(&s->f);
-        }
 
         int n = s->transitions.count;
-        for (int i = 0; i < n; ++i) {
+        for (int i = 0; i < n; ++i)
                 markall(s->transitions.items[i].s);
-        }
 }
 
 inline static struct input_state *
@@ -92,7 +88,7 @@ domap(struct input_state *state, struct value_array *keys, struct value f)
 
         while (i < keys->count) {
                 struct input_transition t;
-                LOG("Making a new transition: %d bytes: %s", keys->items[i].bytes, keys->items[i].string);
+                LOG("Making a new transition: %d bytes: %s", (int) keys->items[i].bytes, keys->items[i].string);
                 memcpy(t.key, keys->items[i].string, keys->items[i].bytes);
                 t.key[keys->items[i].bytes] = '\0';
                 t.s = mkstate();
@@ -117,7 +113,7 @@ state_new(void)
         state.action = NULL;
         state.action_index = 0;
         state.index = 0;
-        state.ms = 0;
+        state.pending = 0;
 
         state.normal_start = mkstate();
         state.insert_start = mkstate();
@@ -176,15 +172,8 @@ state_handle_input(struct state *s, struct value *f, struct key *kp)
                 return STATE_NOTHING;
         }
 
-        struct timeval t;
-        gettimeofday(&t, NULL);
-
-        long ms = t.tv_sec * 1000 + t.tv_usec / 1000;
-        long dt = ms - s->ms;
-
         if (s->index == s->input_buffer.count) {
-                if (dt >= KEY_CHORD_TIMEOUT_MS && (s->current_state->has_action || s->mode == STATE_INSERT)) {
-                        s->ms = ms;
+                if (state_pending_input(s)) {
                         if (s->action != NULL) {
                                 *f = *s->action;
                                 remove_input(s, s->action_index);
@@ -205,8 +194,6 @@ state_handle_input(struct state *s, struct value *f, struct key *kp)
 
                 return STATE_NOTHING;
         }
-
-        s->ms = ms;
 
         char const *key = s->input_buffer.items[s->index].str;
         ++s->index;

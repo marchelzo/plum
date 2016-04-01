@@ -10,10 +10,7 @@ struct editor {
         uintmax_t nextbufid;
         vec(struct buffer) buffers;
 
-        struct {
-                struct window *window;
-                struct buffer *buffer;
-        } console;
+        struct buffer *console;
 
         struct window *root_window;
         struct window *current_window;

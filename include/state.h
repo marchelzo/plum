@@ -30,8 +30,6 @@ enum {
         STATE_ACTION_READY,
         STATE_NOT_BOUND,
         STATE_NOTHING,
-
-        KEY_CHORD_TIMEOUT_MS = 300,
 };
 
 struct input_state;
@@ -78,7 +76,7 @@ struct state {
         struct value *action;
         int action_index;
 
-        long ms;
+        bool pending;
 
         vec(struct key) input_buffer;
 
@@ -108,5 +106,11 @@ state_enter_normal(struct state *s);
 
 void
 state_mark_actions(struct state *s);
+
+inline static bool
+state_pending_input(struct state *s)
+{
+        return s->current_state->has_action || (s->mode == STATE_INSERT && s->current_state != s->insert_start);
+}
 
 #endif

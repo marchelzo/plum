@@ -57,9 +57,14 @@ int main(void)
         setlocale(LC_ALL, "");
 
         initscr();
+        start_color();
+        use_default_colors();
         noecho();
         raw();
         refresh();
+
+        init_pair(1, -1, -1);
+        attron(COLOR_PAIR(1));
 
         TickitTerm *term = tickit_term_open_stdio();
         if (term == NULL) {
@@ -77,13 +82,10 @@ int main(void)
 
         tickit_term_bind_event(term, TICKIT_EV_KEY, 0, handle_term_input_event, &e);
 
-        assert(e.current_window->type == WINDOW_WINDOW);
-
-        unsigned b1 = editor_create_file_buffer(&e, "foobar.txt");
+        unsigned b1 = editor_create_file_buffer(&e, "plum.c");
         editor_view_buffer(&e, e.current_window, b1);
 
         for (;;) {
-                assert(e.root_window != NULL);
                 render(&e, term);
                 tickit_term_input_wait_msec(term, 10);
                 editor_do_update(&e);

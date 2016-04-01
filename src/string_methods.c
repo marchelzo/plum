@@ -97,13 +97,13 @@ string_slice(struct value *string, value_vector *args)
         limitpos.graphemes = i;
         tickit_string_ncount(s, string->bytes, &outpos, &limitpos);
 
-        s += outpos.bytes;
+        i = outpos.bytes;
+
         limitpos.bytes -= outpos.bytes;
-
         limitpos.graphemes = n;
-        tickit_string_ncount(s, limitpos.bytes, &outpos, &limitpos);
+        tickit_string_ncount(s + i, limitpos.bytes, &outpos, &limitpos);
 
-        return STRING_VIEW(*string, 0, outpos.bytes);
+        return STRING_VIEW(*string, i, outpos.bytes);
 }
 
 static struct value

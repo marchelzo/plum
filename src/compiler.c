@@ -1971,7 +1971,7 @@ compiler_get_location(char const *code)
                 else                               break;
         }
 
-        while (lo >= state.expression_locations.count || elocs[lo].offset >= offset) {
+        while (lo > 0 && (lo >= state.expression_locations.count || elocs[lo].offset >= offset)) {
                 --lo;
         }
 

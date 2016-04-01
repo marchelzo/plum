@@ -19,10 +19,13 @@ enum {
         EVT_KEY_INPUT,
         EVT_GROW_X_REQUEST,
         EVT_GROW_Y_REQUEST,
+        EVT_HSPLIT_REQUEST,
+        EVT_VSPLIT_REQUEST,
         EVT_NEXT_WINDOW_REQUEST,
         EVT_PREV_WINDOW_REQUEST,
         EVT_VM_ERROR,
-        EVT_UPDATE,
+        EVT_LOG_REQUEST,
+        EVT_SHOW_CONSOLE_REQUEST,
 };
 
 static inline void

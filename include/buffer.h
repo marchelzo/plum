@@ -4,12 +4,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <setjmp.h>
+#include <stdarg.h>
 
 #include <unistd.h>
 #include <pthread.h>
+#include <pcre.h>
 
 #include "file.h"
-#include "textbuffer.h"
 #include "value.h"
 
 jmp_buf buffer_err_jb;
@@ -57,9 +58,6 @@ buffer_remove(int n);
 char *
 buffer_current_line(void);
 
-char *
-buffer_get_line(int n);
-
 int
 buffer_forward(int n);
 
@@ -106,6 +104,18 @@ int
 buffer_left(int n);
 
 void
+buffer_end_of_line(void);
+
+void
+buffer_start_of_line(void);
+
+void
+buffer_start(void);
+
+void
+buffer_end(void);
+
+void
 buffer_map_normal(struct value_array *chord, struct value action);
 
 void
@@ -120,7 +130,64 @@ buffer_insert_mode(void);
 void
 buffer_cut_line(void);
 
+struct value
+buffer_get_char(int i);
+
+struct value
+buffer_get_line(int i);
+
+struct value
+buffer_save_excursion(struct value *f);
+
+int
+buffer_point(void);
+
+void
+buffer_log(char const *s);
+
+bool
+buffer_undo(void);
+
+bool
+buffer_redo(void);
+
 void
 buffer_mark_values(void);
+
+void
+buffer_center_current_line(void);
+
+int
+buffer_seek(int i);
+
+bool
+buffer_next_match(pcre *re, pcre_extra *extra);
+
+int
+buffer_spawn(char *path, struct value_array *args, struct value on_output, struct value on_exit);
+
+bool
+buffer_kill_subprocess(int fd);
+
+bool
+buffer_close_subprocess(int fd);
+
+bool
+buffer_write_to_subprocess(int fd, char const *data, int n);
+
+bool
+buffer_save_file(void);
+
+void
+buffer_write_file(char const *path, int n);
+
+char const *
+buffer_file_name(void);
+
+void
+buffer_show_console(void);
+
+void
+blog(char const *fmt, ...);
 
 #endif

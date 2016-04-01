@@ -494,6 +494,7 @@ prefix_parenthesis(void)
                 consume(')');
                 struct expression *list = mkexpr();
                 list->type = EXPRESSION_LIST;
+                list->only_identifiers = true;
                 vec_init(list->es);
                 return list;
         }

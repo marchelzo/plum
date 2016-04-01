@@ -5,6 +5,22 @@
 #include "alloc.h"
 #include "test.h"
 #include "buffer.h"
+#include "log.h"
+
+static void
+refreshdimensions(struct window *w)
+{
+        if (w->buffer == NULL)
+                return;
+
+        w->buffer->window = w;
+
+        LOG("Refreshing with dimensions (%d, %d)", w->height - 1, w->width);
+        
+        evt_send(w->buffer->write_fd, EVT_WINDOW_DIMENSIONS);
+        sendint(w->buffer->write_fd, w->height - 1);
+        sendint(w->buffer->write_fd, w->width);
+}
 
 static void
 propagate(struct window *w, int dx, int dy, int dw, int dh)
@@ -32,9 +48,7 @@ propagate(struct window *w, int dx, int dy, int dw, int dh)
                  * new window dimensions.
                  */
                 if (w->buffer != NULL) {
-                        evt_send(w->buffer->write_fd, EVT_WINDOW_DIMENSIONS);
-                        sendint(w->buffer->write_fd, w->height);
-                        sendint(w->buffer->write_fd, w->width);
+                        refreshdimensions(w);
                 }
                 return;
         }
@@ -175,7 +189,20 @@ window_grow_x(struct window *w, int dx)
 }
 
 void
-window_vsplit(struct window *w)
+window_set_height(struct window *w, int height)
+{
+        window_grow_y(w, height - w->height);
+}
+
+void
+window_set_width(struct window *w, int width)
+{
+        window_grow_x(w, width - w->width);
+}
+
+
+void
+window_vsplit(struct window *w, struct buffer *buffer)
 {
         assert(w->type == WINDOW_WINDOW);
 
@@ -192,11 +219,16 @@ window_vsplit(struct window *w)
         w->top->id = id;
         w->top->buffer = b;
 
+        w->bot->buffer = buffer;
+
+        refreshdimensions(w->left);
+        refreshdimensions(w->right);
+
         w->force_redraw = true;
 }
 
 void
-window_hsplit(struct window *w)
+window_hsplit(struct window *w, struct buffer *buffer)
 {
         assert(w->type == WINDOW_WINDOW);
 
@@ -213,6 +245,11 @@ window_hsplit(struct window *w)
         w->left->id = id;
         w->left->buffer = b;
 
+        w->right->buffer = buffer;
+
+        refreshdimensions(w->left);
+        refreshdimensions(w->right);
+
         w->force_redraw = true;
 }
 
@@ -222,11 +259,9 @@ window_delete(struct window *w)
         assert(w->parent != NULL);
 
         struct window *parent = w->parent;
-        struct window *sibling = (w == parent->one)
-                                   ? parent->two
-                                   : parent->one;
+        struct window *sibling = WINDOW_SIBLING(w);
 
-        w->parent->type = sibling->type;
+        parent->type = sibling->type;
         if (sibling->type == WINDOW_WINDOW) {
                 parent->buffer = sibling->buffer;
                 parent->id = sibling->id;
@@ -234,6 +269,9 @@ window_delete(struct window *w)
                 parent->one = sibling->one;
                 parent->two = sibling->two;
         }
+
+        refreshdimensions(parent);
+        w->buffer->window = NULL;
 
         free(sibling);
         freewindow(w);
@@ -249,7 +287,7 @@ TEST(create)
 TEST(vsplit)
 {
         struct window *w = window_new(NULL, 0, 0, 20, 20);
-        window_vsplit(w);
+        window_vsplit(w, NULL);
 
         claim(w->type == WINDOW_VSPLIT);
         claim(w->height == 20);
@@ -266,7 +304,7 @@ TEST(vsplit)
 TEST(hsplit)
 {
         struct window *w = window_new(NULL, 0, 0, 41, 20);
-        window_hsplit(w);
+        window_hsplit(w, NULL);
 
         claim(w->type == WINDOW_HSPLIT);
         claim(w->left != NULL);
@@ -283,7 +321,7 @@ TEST(delete)
 {
         struct window *w = window_new(NULL, 0, 0, 41, 20);
 
-        window_hsplit(w);
+        window_hsplit(w, NULL);
 
         window_delete(w->left);
 

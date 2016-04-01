@@ -16,9 +16,6 @@ struct value
 builtin_editor_remove(value_vector *args);
 
 struct value
-builtin_editor_get_line(value_vector *args);
-
-struct value
 builtin_editor_line(value_vector *args);
 
 struct value
@@ -80,5 +77,65 @@ builtin_editor_end_of_line(value_vector *args);
 
 struct value
 builtin_editor_cut_line(value_vector *args);
+
+struct value
+builtin_editor_goto_end(value_vector *args);
+
+struct value
+builtin_editor_goto_start(value_vector *args);
+
+struct value
+builtin_editor_get_char(value_vector *args);
+
+struct value
+builtin_editor_get_line(value_vector *args);
+
+struct value
+builtin_editor_save_excursion(value_vector *args);
+
+struct value
+builtin_editor_point(value_vector *args);
+
+struct value
+builtin_editor_log(value_vector *args);
+
+struct value
+builtin_editor_undo(value_vector *args);
+
+struct value
+builtin_editor_redo(value_vector *args);
+
+struct value
+builtin_editor_center_current_line(value_vector *args);
+
+struct value
+builtin_editor_next_match(value_vector *args);
+
+struct value
+builtin_editor_seek(value_vector *args);
+
+struct value
+builtin_editor_spawn(value_vector *args);
+
+struct value
+builtin_editor_proc_kill(value_vector *args);
+
+struct value
+builtin_editor_proc_close(value_vector *args);
+
+struct value
+builtin_editor_proc_write(value_vector *args);
+
+struct value
+builtin_editor_proc_write_line(value_vector *args);
+
+struct value
+builtin_editor_write_file(value_vector *args);
+
+struct value
+builtin_editor_file_name(value_vector *args);
+
+struct value
+builtin_editor_show_console(value_vector *args);
 
 #endif

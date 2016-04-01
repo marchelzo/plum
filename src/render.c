@@ -15,7 +15,6 @@
 #include "config.h"
 #include "editor.h"
 #include "alloc.h"
-#include "textbuffer.h"
 #include "location.h"
 #include "test.h"
 #include "util.h"
@@ -52,9 +51,18 @@ render_window(struct window *w)
 
         pthread_mutex_lock(b->rb_mtx);
 
-        assert(b != NULL);
         char const *src = getdata(b);
-        assert(src != NULL);
+
+        src = readint(src, &bytes);
+
+        attron(A_BOLD);
+        bkgdset(A_REVERSE);
+        mvaddnstr(w->y + w->height - 1, w->x, src, bytes);
+        clrtoeol();
+        attroff(A_BOLD);
+        bkgdset(A_NORMAL);
+
+        src += bytes;
 
         src = readint(src, &w->cursor.y);
         src = readint(src, &w->cursor.x);
@@ -107,23 +115,20 @@ draw(struct window *w)
 static bool
 need_redraw(struct window *w)
 {
-        if (w->force_redraw) {
+        if (w->force_redraw)
                 return true;
-        }
 
-        if (w->type == WINDOW_WINDOW) {
+        if (w->type == WINDOW_WINDOW)
                 return was_updated(w->buffer);
-        } else {
+        else
                 return need_redraw(w->one) || need_redraw(w->two);
-        }
 }
 
 bool
 render(struct editor *e)
 {
-        assert(e->root_window != NULL);
         if (need_redraw(e->root_window)) {
-                LOG("doing a redraw...");
+
                 erase();
                 draw(e->root_window);
                 

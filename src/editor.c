@@ -1,6 +1,8 @@
 #include <assert.h>
 #include <signal.h>
 
+#include <ncurses.h>
+
 #include "editor.h"
 #include "buffer.h"
 #include "vec.h"
@@ -8,10 +10,30 @@
 #include "window.h"
 #include "log.h"
 
+inline static void
+deletewindow(struct editor *e, struct window *w)
+{
+        if (e->current_window->parent == w->parent)
+                e->current_window = w->parent;
+
+        window_delete(w);
+}
+
 inline static struct buffer *
 newbuffer(struct editor *e)
 {
         return vec_push(e->buffers, buffer_new(e->nextbufid++));
+}
+
+inline static void
+showconsole(struct editor *e)
+{
+        if (e->console->window != NULL)
+                deletewindow(e, e->console->window);
+
+        struct window *w = e->current_window;
+        window_vsplit(w, e->console);
+        e->current_window = w->top;
 }
 
 /*
@@ -28,16 +50,10 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
         case EVT_GROW_X_REQUEST:
                 amount = recvint(b->read_fd);
                 window_grow_x(b->window, amount);
-                evt_send(b->write_fd, EVT_WINDOW_DIMENSIONS);
-                sendint(b->write_fd, b->window->height);
-                sendint(b->write_fd, b->window->width);
                 break;
         case EVT_GROW_Y_REQUEST:
                 amount = recvint(b->read_fd);
                 window_grow_y(b->window, amount);
-                evt_send(b->write_fd, EVT_WINDOW_DIMENSIONS);
-                sendint(b->write_fd, b->window->height);
-                sendint(b->write_fd, b->window->width);
                 break;
         case EVT_NEXT_WINDOW_REQUEST:
                 if (b->window == e->current_window) {
@@ -48,12 +64,20 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                 if (b->window == e->current_window) {
                         e->current_window = window_prev(b->window);
                 }
+        case EVT_HSPLIT_REQUEST: // TODO
+        case EVT_VSPLIT_REQUEST: // TODO
+                break;
+        case EVT_SHOW_CONSOLE_REQUEST:
+                showconsole(e);
+                break;
         case EVT_VM_ERROR:
+                beep();
+        case EVT_LOG_REQUEST:
                 bytes = recvint(b->read_fd);
                 read(b->read_fd, buf, bytes);
-                evt_send(e->console.buffer->write_fd, EVT_VM_ERROR);
-                sendint(e->console.buffer->write_fd, bytes);
-                write(e->console.buffer->write_fd, buf, bytes);
+                evt_send(e->console->write_fd, EVT_LOG_REQUEST);
+                sendint(e->console->write_fd, bytes);
+                write(e->console->write_fd, buf, bytes);
                 break;
         }
 }
@@ -122,23 +146,9 @@ editor_init(struct editor *e, int lines, int cols)
         vec_init(e->buffers);
 
         e->root_window = window_new(NULL, 0, 0, cols, lines);
+        e->current_window = e->root_window;
 
-        window_vsplit(e->root_window);
-        window_grow_y(e->root_window->top, lines / 2 - 10);
-
-        e->current_window = e->root_window->top;
-
-        e->console.window = e->root_window->bot;
-        e->console.buffer = newbuffer(e);
-
-        e->console.buffer->window = e->console.window;
-        e->console.window->buffer = e->console.buffer;
-
-        evt_send(e->console.buffer->write_fd, EVT_START_CONSOLE);
-
-        evt_send(e->console.buffer->write_fd, EVT_WINDOW_DIMENSIONS);
-        sendint(e->console.buffer->write_fd, e->console.window->height);
-        sendint(e->console.buffer->write_fd, e->console.window->width);
+        e->console = newbuffer(e);
 }
 
 /*
@@ -176,7 +186,7 @@ editor_view_buffer(struct editor *e, struct window *w, unsigned buf_id)
         b->window = w;
 
         evt_send(b->write_fd, EVT_WINDOW_DIMENSIONS);
-        sendint(b->write_fd, w->height);
+        sendint(b->write_fd, w->height - 1);
         sendint(b->write_fd, w->width);
 }
 
@@ -244,5 +254,4 @@ void
 editor_do_update(struct editor *e)
 {
         handle_events(e);
-        evt_send(e->current_window->buffer->write_fd, EVT_UPDATE);
 }

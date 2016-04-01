@@ -4,18 +4,20 @@
 #include <string.h>
 #include <stdnoreturn.h>
 #include <assert.h>
-#include <tickit.h>
+#include <stdarg.h>
 
+#include <poll.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <unistd.h>
 #include <fcntl.h>
 
+#include "config.h"
 #include "state.h"
 #include "alloc.h"
 #include "buffer.h"
-#include "textbuffer.h"
 #include "editor_functions.h"
+#include "tb.h"
 #include "location.h"
 #include "test.h"
 #include "util.h"
@@ -23,26 +25,29 @@
 #include "file.h"
 #include "buffer.h"
 #include "protocol.h"
+#include "subprocess.h"
 #include "log.h"
 #include "vm.h"
 
-enum {
-        READ_BUFFER_SIZE  = 1 << 14,
+static int
+buffer_load_file(char const *);
 
+enum {
         BUFFER_RENDERBUFFER_SIZE = 65536,
         BUFFER_LOAD_OK,
         BUFFER_LOAD_NO_PERMISSION,
         BUFFER_LOAD_NO_SUCH_FILE
 };
 
-static int
-buffer_load_file(char const *);
-
 static char filename[512];
 
 static struct file file;
-static struct textbuffer data;
+static struct tb data;
+static bool backgrounded;
 
+/*
+ * Used to restart the command loop after a VM panic.
+ */
 jmp_buf buffer_err_jb;
 
 static char *rb1;
@@ -61,6 +66,14 @@ static int read_fd;
 static int write_fd;
 
 /*
+ * fds that we poll in the main buffer loop.
+ * The fd for reading events from the editor,
+ * and any fds for getting output from spawned
+ * subprocesses are in here.
+ */
+static vec(struct pollfd) pollfds;
+
+/*
  * Dimensions of the window viewing this buffer.
  * If this buffer is backgrounded, these values have no meaning.
  */
@@ -68,15 +81,9 @@ static int lines;
 static int cols;
 
 /*
- * The cursor location is not the position of the cursor on the screen, but rather the position
- * in the text buffer representing the file.
- */
-static struct location cursor = { 0, 0 };
-
-/* Line and column offsets.
+ * Line and column offsets.
  */
 static struct location scroll = { 0, 0 };
-
 
 /*
  * Input events received from the parent process are read into this
@@ -84,6 +91,53 @@ static struct location scroll = { 0, 0 };
  * of which should exceed 64 bytes. We will see, though.
  */
 static char input_buffer[64];
+
+ /* remove the ith pollfd struct from the list of pollfds. */
+inline static void
+rempollfd(int i)
+{
+        pollfds.items[i] = *vec_last(pollfds);
+        --pollfds.count;
+}
+
+ /* remove the pollfd struct with fd 'fd' from the list of pollfds. */
+inline static int
+findpollfd(int fd)
+{
+        /* start at 1 since the main editor pipe fd will always be at index 0 */
+        for (int i = 1; i < pollfds.count; ++i)
+                if (pollfds.items[i].fd == fd)
+                        return i;
+        return -1;
+}
+
+/* add 'fd' to the list of fds to poll */
+inline static void
+addpollfd(int fd)
+{
+        vec_push(pollfds, ((struct pollfd){ .fd = fd, .events = POLLIN }));
+}
+
+inline static void
+checkinput(void)
+{
+        int status;
+        struct key key;
+        struct value action;
+
+        while ((status = state_handle_input(&state, &action, &key)) != STATE_NOTHING) {
+                switch (status) {
+                case STATE_ACTION_READY:
+                        vm_eval_function(&action, NULL);
+                        break;
+                case STATE_NOT_BOUND:
+                        if (state.mode == STATE_INSERT) {
+                                tb_insert(&data, key.str, strlen(key.str));
+                        }
+                        break;
+                }
+        }
+}
 
 inline static void
 rb_lock(void)
@@ -127,8 +181,8 @@ inline static struct location
 screenlocation(void)
 {
         return (struct location) {
-                .line = cursor.line - scroll.line,
-                .col  = cursor.col  - scroll.col
+                .line = tb_line(&data) - scroll.line,
+                .col  = tb_column(&data)  - scroll.col
         };
 }
 
@@ -143,23 +197,25 @@ updatedimensions(int newlines, int newcols)
         int dx = newcols - cols;
 
         if (dy > 0) {
-                intmax_t yscroll = scroll.line;
-                yscroll -= max(newlines - (textbuffer_num_lines(&data) - yscroll), 0);
+                int yscroll = scroll.line;
+                // not sure if this is useful or not
+                //yscroll -= max(newlines - (tb_lines(&data) - yscroll), 0);
                 yscroll -= (dy + 1) / 2;
                 scroll.line = max(yscroll, 0);
         }
-        if (cursor.line >= scroll.line + newlines) {
-                scroll.line = cursor.line - newlines + 1;
+        if (tb_line(&data) >= scroll.line + newlines) {
+                scroll.line = tb_line(&data) - newlines + 1;
         }
 
         if (dx > 0) {
-                intmax_t xscroll = scroll.col;
-                xscroll -= max(newcols - (textbuffer_line_width(&data, cursor.line) - xscroll), 0);
+                int xscroll = scroll.col;
+                xscroll -= max(newcols - (tb_line_width(&data) - xscroll), 0);
                 xscroll -= (dx + 1) / 2;
                 scroll.col = max(xscroll, 0);
+                scroll.col = 0;
         }
-        if (cursor.col >= scroll.col + newcols) {
-                scroll.col = cursor.col - newcols + 1;
+        if (tb_column(&data) >= scroll.col + newcols) {
+                scroll.col = tb_column(&data) - newcols + 1;
         }
 
         lines = newlines;
@@ -172,10 +228,10 @@ updatedimensions(int newlines, int newcols)
 inline static void
 adjust_cursor(void)
 {
-        if (cursor.line < scroll.line) {
-                textbuffer_next_line(&data, &cursor, scroll.line - cursor.line);
-        } else if (cursor.line + 1 > scroll.line + lines) {
-                textbuffer_prev_line(&data, &cursor, cursor.line + 1 - scroll.line - lines);
+        if (tb_line(&data) < scroll.line) {
+                tb_down(&data, scroll.line - tb_line(&data));
+        } else if (tb_line(&data) + 1 > scroll.line + lines) {
+                tb_up(&data, tb_line(&data) + 1 - scroll.line - lines);
         }
 }
 
@@ -185,16 +241,16 @@ adjust_cursor(void)
 inline static void
 adjust_scroll(void)
 {
-        if (cursor.line < scroll.line) {
-                scroll.line = cursor.line;
-        } else if (cursor.line + 1 > scroll.line + lines) {
-                scroll.line = cursor.line - lines + 1;
+        if (tb_line(&data) < scroll.line) {
+                scroll.line = tb_line(&data);
+        } else if (tb_line(&data) + 1 > scroll.line + lines) {
+                scroll.line = tb_line(&data) - lines + 1;
         }
 
-        if (scroll.col + cols > cursor.col) {
-                scroll.col = max(0, cursor.col - cols + 1);
-        } else if (cursor.col + 1 > scroll.col + cols) {
-                scroll.col = cursor.col - cols + 1;
+        if (scroll.col + cols > tb_column(&data)) {
+                scroll.col = max(0, tb_column(&data) - cols + 1);
+        } else if (tb_column(&data) + 1 > scroll.col + cols) {
+                scroll.col = tb_column(&data) - cols + 1;
         }
 }
 
@@ -206,7 +262,9 @@ adjust_scroll(void)
  *
  * cursor line - int
  * cursor col  - int
- * # of lines  - int
+ * insert mode - int (0 or 1)
+ *
+ * # of line   - int
  *
  * for each line:
  *      number of bytes (n) - int
@@ -218,16 +276,27 @@ render(void)
         char *dst = rb_current();
 
         struct location screenloc = screenlocation();
+
+        char *status_size = dst;
+        dst += sizeof (int);
+
+        int n = sprintf(
+                dst,
+                " %-*s%d,%d",
+                cols - 20,
+                file.path == NULL ? "[No Name]" : file.path,
+                tb_line(&data) + 1,
+                tb_column(&data) + 1
+        );
+
+        memcpy(status_size, &n, sizeof (int));
+        dst += n;
+
         dst = writeint(dst, screenloc.line);
         dst = writeint(dst, screenloc.col);
         dst = writeint(dst, state.mode == STATE_INSERT);
 
-        int lines_to_render = min(textbuffer_num_lines(&data) - scroll.line, lines);
-
-        dst = writeint(dst, lines_to_render);
-        for (int i = 0; i < lines_to_render; ++i) {
-                dst = textbuffer_copy_line_cols(&data, scroll.line + i, dst, scroll.col, cols);
-        }
+        tb_draw(&data, dst, scroll.line, scroll.col, lines, cols);
 
         rb_swap();
 }
@@ -245,14 +314,17 @@ source_init_files(void)
         }
 }
 
-noreturn static void
-buffer_main(void)
+static void
+handle_editor_event(int ev)
 {
-        /*
-         * First we wait for instructions about which kind of buffer
-         * we are (file / console).
-         */
-        switch (evt_recv(read_fd)) {
+        int bytes;
+        int newlines, newcols;
+        char buf[4096];
+        int status;
+        struct key key;
+        struct value action;
+
+        switch (ev) {
         case EVT_LOAD_FILE: {
                 int size = recvint(read_fd);
                 char *path = alloc(size + 1);
@@ -261,48 +333,95 @@ buffer_main(void)
 
                 buffer_load_file(path);
 
-                break;
-        }
-        case EVT_START_CONSOLE: {
                 /*
-                 * Eventually there will be special console buffer in addition to
-                 * regular text buffers; like a shell that lets interact with the
-                 * plum interpreter directly.
+                 * Start recording changes, and start a new edit group.
                  */
+                tb_start_history(&data);
+                tb_start_new_edit(&data);
+
                 break;
         }
-        default: panic("buffer process received an invalid event code from parent");
+        case EVT_LOG_REQUEST:
+                /*
+                 * This event will only ever be received in the console buffer (for now).
+                 */
+                bytes = recvint(read_fd);
+                read(read_fd, buf, bytes);
+                tb_end(&data);
+                tb_insert(&data, buf, bytes);
+                tb_insert(&data, "\n", 1);
+                break;
+        case EVT_WINDOW_DIMENSIONS:
+                backgrounded = false;
+                newlines = recvint(read_fd);
+                newcols = recvint(read_fd);
+                updatedimensions(newlines, newcols);
+                break;
+        case EVT_TEXT_INPUT:
+                bytes = recvint(read_fd);
+                read(read_fd, input_buffer, bytes);
+                input_buffer[bytes] = '\0';
+                LOG("GOT TEST: '%s'", input_buffer);
+                state_push_input(&state, input_buffer);
+                checkinput();
+                break;
+        case EVT_KEY_INPUT:
+                bytes = recvint(read_fd);
+                read(read_fd, input_buffer, bytes);
+                input_buffer[bytes] = '\0';
+
+                LOG("KEY = '%s'", input_buffer);
+
+                if (strcmp(input_buffer, "C-j") == 0) {
+                        char *line = buffer_current_line();
+                        sprintf(buf, "print(%s);", line);
+                        tb_insert(&data, "\n", 1);
+                        if (strlen(line) == 0) break;
+                        if (vm_execute(buf)) {
+                                char const *out = vm_get_output();
+                                tb_insert(&data, out, strlen(out));
+                        } else if (strstr(vm_error(), "ParseError") != NULL && (sprintf(buf, "%s\n", line), vm_execute(buf))) {
+                                char const *out = vm_get_output();
+                                tb_insert(&data, out, strlen(out));
+                        } else {
+                                char const *err = vm_error();
+                                tb_insert(&data, err, strlen(err));
+                                tb_insert(&data, "\n", 1);
+                        }
+                } else {
+                        state_push_input(&state, input_buffer);
+                        while ((status = state_handle_input(&state, &action, &key)) != STATE_NOTHING) {
+                                switch (status) {
+                                case STATE_ACTION_READY:
+                                        vm_eval_function(&action, NULL);
+                                        break;
+                                case STATE_NOT_BOUND:
+                                        if (state.mode == STATE_INSERT) {
+                                                tb_insert(&data, key.str, strlen(key.str));
+                                        }
+                                        break;
+                                }
+                        }
+                }
         }
+}
 
-        /*
-         * Next we wait to be told the dimensions of the window
-         * that is viewing us.
-         */
-        assert(evt_recv(read_fd) == EVT_WINDOW_DIMENSIONS);
-        lines = recvint(read_fd);
-        cols = recvint(read_fd);
-
-        /*
-         * I don't know if or why this is necessary, or what it even does. Oh well.
-         */
-        LOG("RENDERING...");
-        render();
-        render();
-
-        int bytes;
-        int newlines, newcols;
-        struct key key;
-        char buf[4096];
-        int status;
-        buffer_event_code ev;
-
-        struct value action;
+noreturn static void
+buffer_main(void)
+{
+        backgrounded = true;
 
         /*
          * Initialize the VM instance for this process.
          */
         vm_init();
         source_init_files();
+
+        /*
+         * Initialize the list of file descriptiors that we should poll
+         * with the read-end of main editor process's pipe.
+         */
+        addpollfd(read_fd);
 
         /*
          * The main loop of the buffer process. Wait for event notifications from the parent,
@@ -315,111 +434,63 @@ buffer_main(void)
                  */
                 if (setjmp(buffer_err_jb) != 0) {
                         char const *e = vm_error();
-                        LOG("GOT VM ERROR: %s", e);
                         int bytes = strlen(e);
                         evt_send(write_fd, EVT_VM_ERROR);
                         sendint(write_fd, bytes);
                         write(write_fd, e, bytes);
-                        render();
-                        continue;
-                }
-
-                ev = evt_recv(read_fd);
-                switch (ev) {
-                case EVT_UPDATE:
-                        if ((status = state_handle_input(&state, &action, &key)) != STATE_NOTHING) {
-                                switch (status) {
-                                case STATE_ACTION_READY:
-                                        vm_eval_function(&action, NULL);
-                                        break;
-                                case STATE_NOT_BOUND:
-                                        if (state.mode == STATE_INSERT) {
-                                                textbuffer_insert(&data, &cursor, key.str);
-                                        }
-                                        break;
-                                }
+                        if (!backgrounded) {
                                 adjust_scroll();
                                 render();
                         }
-                        break;
-                case EVT_VM_ERROR:
+                        continue;
+                }
+
+                for (;;) {
                         /*
-                         * This event will only ever be received in the console buffer.
+                         * Group all of the edits which take place during a single iteration
+                         * of the buffer loop (unless we're in insert mode; then we keep using the
+                         * same group).
                          */
-                        bytes = recvint(read_fd);
-                        read(read_fd, buf, bytes);
-                        textbuffer_append_n(&data, &cursor, buf, bytes);
-                        textbuffer_insert_n(&data, &cursor, "\n", 1);
-                        adjust_scroll();
-                        render();
-                        break;
-                case EVT_WINDOW_DIMENSIONS:
-                        newlines = recvint(read_fd);
-                        newcols = recvint(read_fd);
-                        updatedimensions(newlines, newcols);
-                        render();
-                        break;
-                case EVT_TEXT_INPUT:
-                        bytes = recvint(read_fd);
-                        read(read_fd, input_buffer, bytes);
-                        input_buffer[bytes] = '\0';
-
-                        state_push_input(&state, input_buffer);
-                        while ((status = state_handle_input(&state, &action, &key)) != STATE_NOTHING) {
-                                switch (status) {
-                                case STATE_ACTION_READY:
-                                        vm_eval_function(&action, NULL);
-                                        break;
-                                case STATE_NOT_BOUND:
-                                        if (state.mode == STATE_INSERT) {
-                                                textbuffer_insert(&data, &cursor, key.str);
-                                        }
-                                        break;
-                                }
+                        if (data.changed && state.mode != STATE_INSERT) {
+                                tb_start_new_edit(&data);
+                                data.changed = false;
                         }
 
-                        adjust_scroll();
-                        render();
-                        break;
-                case EVT_KEY_INPUT:
-                        bytes = recvint(read_fd);
-                        read(read_fd, input_buffer, bytes);
-                        input_buffer[bytes] = '\0';
+                        int timeout = state_pending_input(&state) ? KEY_CHORD_TIMEOUT_MS : -1;
+                        int n = poll(pollfds.items, pollfds.count, timeout);
 
-                        LOG("KEY = '%s'", input_buffer);
+                        /*
+                         * If n is zero, that means we were waiting on user input, so all we
+                         * have to do is let the state machine know that it timed out.
+                         */
+                        if (n == 0) {
+                                checkinput();
+                                goto next;
+                        }
 
-                        if (strcmp(input_buffer, "C-j") == 0) {
-                                char *line = buffer_current_line();
-                                sprintf(buf, "print(%s);", line);
-                                textbuffer_insert(&data, &cursor, "\n");
-                                if (strlen(line) == 0) goto done;
-                                if (vm_execute(buf)) {
-                                        textbuffer_insert(&data, &cursor, vm_get_output());
-                                } else if (strstr(vm_error(), "ParseError") != NULL && (sprintf(buf, "%s\n", line), vm_execute(buf))) {
-                                        textbuffer_insert(&data, &cursor, vm_get_output());
-                                } else {
-                                        textbuffer_insert(&data, &cursor, vm_error());
-                                        textbuffer_insert(&data, &cursor, "\n");
-                                }
-                        } else {
-                                state_push_input(&state, input_buffer);
-                                while ((status = state_handle_input(&state, &action, &key)) != STATE_NOTHING) {
-                                        switch (status) {
-                                        case STATE_ACTION_READY:
-                                                vm_eval_function(&action, NULL);
-                                                break;
-                                        case STATE_NOT_BOUND:
-                                                if (state.mode == STATE_INSERT) {
-                                                        textbuffer_insert(&data, &cursor, key.str);
-                                                }
-                                                break;
+                        /* check for editor events */
+                        if (pollfds.items[0].revents & POLLIN)
+                                handle_editor_event(evt_recv(read_fd));
+
+                        /* check any subprocesses */
+                        static char proc_out_buf[4096];
+                        for (int i = 1; i < pollfds.count; ++i) {
+                                if (pollfds.items[i].revents & POLLIN) {
+                                        int r = read(pollfds.items[i].fd, proc_out_buf, sizeof proc_out_buf);
+                                        if (r == 0) {
+                                                int fd = pollfds.items[i].fd;
+                                                rempollfd(i--);
+                                                sp_on_exit(fd);
+                                        } else {
+                                                sp_on_output(pollfds.items[i].fd, proc_out_buf, r);
                                         }
                                 }
                         }
-done:
-                        adjust_scroll();
-                        render();
-                        break;
+next:
+                        if (!backgrounded) {
+                                adjust_scroll();
+                                render();
+                        }
                 }
         }
 }
@@ -496,7 +567,7 @@ buffer_new(unsigned id)
                 rb_lock();
                 evt_send(c2p[1], EVT_CHILD_LOCKED_MUTEX);
                 
-                data = textbuffer_new();
+                data = tb_new();
                 file = file_invalid();
                 state = state_new();
                 read_fd = p2c[0];
@@ -546,44 +617,18 @@ buffer_load_file(char const *path)
 
         file = file_new(path);
 
-        static char buf[READ_BUFFER_SIZE];
-        struct location loc = { 0, 0 };
-        bool ending_newline = false;
-        ssize_t n;
+        tb_read(&data, fd);
+        tb_seek(&data, 0);
 
-        while (n = read(fd, buf, sizeof buf - 1), n > 0) {
-                ending_newline = buf[n - 1] == '\n';
-                buf[n] = '\0';
-                textbuffer_insert(&data, &loc, buf);
-        }
-        // TODO: handle read errors
-
-        if (ending_newline) {
-                textbuffer_remove_line(&data, loc.line);
-        }
-
+        close(fd);
+        
         return BUFFER_LOAD_OK;
 }
 
 char *
 buffer_current_line(void)
 {
-        return textbuffer_get_line(&data, cursor.line);
-}
-
-char *
-buffer_get_line(int line)
-{
-        /*
-         * This should be checked by the caller.
-         */
-        assert(line >= 0);
-
-        if (line >= textbuffer_num_lines(&data)) {
-                return NULL;
-        } else {
-                return textbuffer_get_line(&data, line);
-        }
+        return tb_clone_line(&data);
 }
 
 /*
@@ -592,55 +637,79 @@ buffer_get_line(int line)
 void
 buffer_insert_n(char const *text, int n)
 {
-        textbuffer_insert_n(&data, &cursor, text, n);
+        tb_insert(&data, text, n);
 }
 
 int
 buffer_remove(int n)
 {
-        return textbuffer_remove(&data, cursor, n);
+        return tb_remove(&data, n);
 }
 
 int
 buffer_forward(int n)
 {
-        return textbuffer_move_forward(&data, &cursor, n);
+        return tb_forward(&data, n);
 }
 
 int
 buffer_backward(int n)
 {
-        return textbuffer_move_backward(&data, &cursor, n);
+        return tb_backward(&data, n);
 }
 
 int
 buffer_right(int n)
 {
-        return textbuffer_move_right(&data, &cursor, n);
+        return tb_right(&data, n);
+}
+
+void
+buffer_start_of_line(void)
+{
+        tb_start_of_line(&data);
+}
+
+void
+buffer_end_of_line(void)
+{
+        tb_end_of_line(&data);
+}
+
+void
+buffer_start(void)
+{
+        tb_start(&data);
+}
+
+void
+buffer_end(void)
+{
+        tb_end(&data);
 }
 
 int
 buffer_left(int n)
 {
-        return textbuffer_move_left(&data, &cursor, n);
+        return tb_left(&data, n);
 }
 
 int
 buffer_line(void)
 {
-        return cursor.line;
+        return tb_line(&data);
 }
 
 int
 buffer_column(void)
 {
-        return cursor.col;
+        return tb_column(&data);
 }
 
 int
 buffer_lines(void)
 {
-        return textbuffer_num_lines(&data);
+        return tb_lines(&data);
 }
 
 void
@@ -660,13 +729,13 @@ buffer_grow_y(int amount)
 int
 buffer_next_line(int amount)
 {
-        return textbuffer_next_line(&data, &cursor, amount);
+        return tb_down(&data, amount);
 }
 
 int
 buffer_prev_line(int amount)
 {
-        return textbuffer_prev_line(&data, &cursor, amount);
+        return tb_up(&data, amount);
 }
 
 int
@@ -674,7 +743,7 @@ buffer_scroll_down(int amount)
 {
         // TODO: allow scrolling further than the last screen height
 
-        int max_possible = (textbuffer_num_lines(&data) - lines) - scroll.line;
+        int max_possible = (tb_lines(&data) - lines) - scroll.line;
         int scrolling = min(amount, max_possible);
 
         scroll.line += scrolling;
@@ -741,7 +810,17 @@ buffer_source_file(char const *path, int bytes)
 void
 buffer_cut_line(void)
 {
-        textbuffer_cut_line(&data, cursor);
+        tb_truncate_line(&data);
+}
+
+struct value
+buffer_save_excursion(struct value *f)
+{
+        int *marker = tb_new_marker(&data, data.character);
+        struct value result = vm_eval_function(f, &NIL);
+        tb_seek(&data, *marker);
+        tb_delete_marker(&data, marker);
+        return result;
 }
 
 void
@@ -750,10 +829,189 @@ buffer_mark_values(void)
         state_mark_actions(&state);
 }
 
+struct value
+buffer_get_char(int i)
+{
+        if (i == -1) // -1 means current char. this is ugly.
+                return tb_get_char(&data, data.character);
+        else
+                return tb_get_char(&data, i);
+}
+
+struct value
+buffer_get_line(int i)
+{
+        if (i == -1) // -1 means current char. this is ugly.
+                return tb_get_line(&data, data.line);
+        else
+                return tb_get_line(&data, i);
+}
+
+int
+buffer_point(void)
+{
+        return data.character;
+}
+
+void
+buffer_log(char const *s)
+{
+        int bytes = strlen(s);
+        evt_send(write_fd, EVT_LOG_REQUEST);
+        sendint(write_fd, bytes);
+        write(write_fd, s, bytes);
+}
+
+bool
+buffer_undo(void)
+{
+        return tb_undo(&data);
+}
+
+bool
+buffer_redo(void)
+{
+        return tb_redo(&data);
+}
+
+void
+buffer_center_current_line(void)
+{
+        scroll.line = max(tb_line(&data) - (lines / 2), 0);
+}
+
+bool
+buffer_next_match(pcre *re, pcre_extra *extra)
+{
+        return tb_next_match(&data, re, extra);
+}
+
+int
+buffer_seek(int i)
+{
+        return tb_seek(&data, i);
+}
+
+int
+buffer_spawn(char *path, struct value_array *args, struct value on_output, struct value on_exit)
+{
+        int fds[2];
+
+        if (!sp_tryspawn(path, args, on_output, on_exit, fds)) {
+                blog("Failed to spawn process '%s': %s", path, strerror(errno));
+                free(path);
+                return -1;
+        }
+
+        addpollfd(fds[1]);
+
+        return fds[0];
+}
+
+bool
+buffer_kill_subprocess(int fd)
+{
+        if (!sp_fdvalid(fd))
+                return false;
+
+        sp_kill(fd);
+
+        return true;
+}
+
+/*
+ * Just closes our end of the pipe.
+ */
+bool
+buffer_close_subprocess(int fd)
+{
+        if (!sp_fdvalid(fd))
+                return false;
+
+        sp_close(fd);
+
+        return true;
+}
+
+bool
+buffer_write_to_subprocess(int fd, char const *data, int n)
+{
+        if (!sp_fdvalid(fd))
+                return false;
+
+        /* maybe this should be done in subprocess.c just for the sake of encapsulation */
+        if (write(fd, data, n) == -1)
+                return false;
+
+        LOG("wrote %d bytes to subprocess", n);
+
+        return true;
+}
+
+void
+buffer_write_file(char const *path, int n)
+{
+        static char pathbuf[1024];
+
+        if (n >= 1024) {
+                blog("Filename is too long. Not writing.");
+                return;
+        }
+        
+        memcpy(pathbuf, path, n);
+        pathbuf[n] = '\0';
+
+        int fd = open(pathbuf, O_WRONLY | O_CREAT | O_EXLOCK, 0666);
+        if (fd == -1) {
+                blog("Failed to open %s for writing: %s", pathbuf, strerror(errno));
+        }
+
+        tb_write(&data, fd);
+
+        close(fd);
+}
+
+bool
+buffer_save_file(void)
+{
+        if (file.path == NULL)
+                return false;
+
+        buffer_write_file(file.path, strlen(file.path));
+
+        return true;
+}
+
+char const *
+buffer_file_name(void)
+{
+        return file.path;
+}
+
+void
+buffer_show_console(void)
+{
+        evt_send(write_fd, EVT_SHOW_CONSOLE_REQUEST);
+}
+
+void
+blog(char const *fmt, ...)
+{
+        va_list ap;
+        va_start(ap, fmt);
+
+        static char logbuf[1024];
+        vsnprintf(logbuf, sizeof logbuf - 1, fmt, ap);
+
+        va_end(ap);
+
+        buffer_log(logbuf);
+}
+
 TEST(setup)
 {
         file = file_invalid();
-        data = textbuffer_new();
+        data = tb_new();
 }
 
 TEST(create) // OFF
@@ -779,6 +1037,6 @@ TEST(bigfile) // OFF
 {
         buffer_load_file("bigfile.txt");
 
-        struct location loc = { 0, 238472 };
-        textbuffer_insert(&data, &loc, "   testing   ");
+        tb_seek(&data, 238472);
+        tb_insert(&data, "   testing   ", 11);
 }

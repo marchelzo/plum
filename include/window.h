@@ -7,6 +7,8 @@
 
 #include "window.h"
 
+#define WINDOW_SIBLING(w) (((w)->parent->one == (w)) ? (w)->parent->two : (w)->parent->one)
+
 struct window {
         enum { WINDOW_VSPLIT, WINDOW_HSPLIT, WINDOW_WINDOW } type;
         int x, y;    // top-left coords
@@ -58,10 +60,16 @@ void
 window_grow_x(struct window *w, int dx);
 
 void
-window_vsplit(struct window *w);
+window_set_height(struct window *w, int height);
 
 void
-window_hsplit(struct window *w);
+window_set_width(struct window *w, int width);
+
+void
+window_vsplit(struct window *w, struct buffer *b);
+
+void
+window_hsplit(struct window *w, struct buffer *b);
 
 void
 window_delete(struct window *w);
