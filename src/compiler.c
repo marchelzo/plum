@@ -147,10 +147,6 @@ emit_assignment(struct expression *target, struct expression const *e, int i);
 static void
 import_module(char *name, char *as);
 
-static struct value const nil = {
-        .type = VALUE_NIL
-};
-
 static char const *tags[] = {
         "None",
         "Some",
@@ -720,16 +716,6 @@ emit_symbol(uintptr_t sym)
         LOG("emitting symbol: %"PRIuPTR, sym);
         char const *s = (char *) &sym;
         for (int i = 0; i < sizeof (uintptr_t); ++i) {
-                vec_push(state.code, s[i]);
-        }
-}
-
-inline static void
-emit_ptr(void const *p)
-{
-        
-        char const *s = (char *) &p;
-        for (int i = 0; i < sizeof (void *); ++i) {
                 vec_push(state.code, s[i]);
         }
 }
