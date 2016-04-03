@@ -138,4 +138,16 @@ builtin_editor_file_name(value_vector *args);
 struct value
 builtin_editor_show_console(value_vector *args);
 
+struct value
+builtin_editor_horizontal_split(value_vector *args);
+
+struct value
+builtin_editor_vertical_split(value_vector *args);
+
+struct value
+builtin_editor_current_window(value_vector *args);
+
+struct value
+builtin_editor_delete_window(value_vector *args);
+
 #endif

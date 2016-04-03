@@ -46,7 +46,6 @@ render_window(struct window *w)
 {
         int lines;
         int bytes;
-        int insert_mode;
         struct buffer *b = w->buffer;
 
         pthread_mutex_lock(b->rb_mtx);
@@ -58,7 +57,6 @@ render_window(struct window *w)
         attron(A_BOLD);
         bkgdset(A_REVERSE);
         mvaddnstr(w->y + w->height - 1, w->x, src, bytes);
-        clrtoeol();
         attroff(A_BOLD);
         bkgdset(A_NORMAL);
 
@@ -66,17 +64,7 @@ render_window(struct window *w)
 
         src = readint(src, &w->cursor.y);
         src = readint(src, &w->cursor.x);
-        src = readint(src, &insert_mode);
-
-        if (insert_mode != w->insert_mode) {
-                if (insert_mode) {
-                        write(1, INSERT_BEGIN_STRING, sizeof INSERT_BEGIN_STRING - 1);
-                } else {
-                        write(1, INSERT_END_STRING, sizeof INSERT_END_STRING - 1);
-                }
-        }
-
-        w->insert_mode = insert_mode;
+        w->insert_mode = *src++;
 
         src = readint(src, &lines);
         for (int line = 0; line < lines; ++line) {
@@ -127,6 +115,8 @@ need_redraw(struct window *w)
 bool
 render(struct editor *e)
 {
+        static bool insert_mode = false;
+
         if (need_redraw(e->root_window)) {
 
                 erase();
@@ -136,7 +126,18 @@ render(struct editor *e)
                 int x = e->current_window->x + e->current_window->cursor.x;
                 move(y, x);
 
+                if (insert_mode != e->current_window->insert_mode) {
+                        if (e->current_window->insert_mode) {
+                                write(1, INSERT_BEGIN_STRING, sizeof INSERT_BEGIN_STRING - 1);
+                        } else {
+                                write(1, INSERT_END_STRING, sizeof INSERT_END_STRING - 1);
+                        }
+                }
+
+                insert_mode = e->current_window->insert_mode;
+
                 refresh();
+
                 return true;
         }
 

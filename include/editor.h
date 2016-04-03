@@ -8,7 +8,7 @@
 
 struct editor {
         uintmax_t nextbufid;
-        vec(struct buffer) buffers;
+        vec(struct buffer *) buffers;
 
         struct buffer *console;
 

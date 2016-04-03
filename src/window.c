@@ -7,6 +7,8 @@
 #include "buffer.h"
 #include "log.h"
 
+static int winid = 0;
+
 static void
 refreshdimensions(struct window *w)
 {
@@ -73,6 +75,7 @@ window_new(
 
         w->type = WINDOW_WINDOW;
         w->buffer = NULL;
+        w->id = winid++;
 
         w->parent = parent;
         w->x = x;
@@ -88,28 +91,23 @@ window_new(
 struct window *
 window_next(struct window *w)
 {
+        assert(w->type == WINDOW_WINDOW);
+
         struct window *p = w->parent;
 
         if (p == NULL) {
                 return w;
         }
 
-        if (p->one == w) {
-                return p->two;
-        }
-
-        do {
+        while (p != NULL && (p->two == w || p->two == NULL)) {
+                w = p;
                 p = p->parent;
-                w = w->parent;
-        } while (p != NULL && p->two == NULL);
-
-        if (p != NULL) {
-                return p->two;
         }
 
-        while (w->type != WINDOW_WINDOW) {
+        w = (p == NULL) ? w : p->two;
+
+        while (w->type != WINDOW_WINDOW)
                 w = w->one;
-        }
 
         return w;
 }
@@ -123,22 +121,15 @@ window_prev(struct window *w)
                 return w;
         }
 
-        if (p->one == w) {
-                return p->two;
-        }
-
-        do {
+        while (p != NULL && (p->one == w || p->one == NULL)) {
+                w = p;
                 p = p->parent;
-                w = w->parent;
-        } while (p != NULL && p->two == NULL);
-
-        if (p != NULL) {
-                return p->two;
         }
 
-        while (w->type != WINDOW_WINDOW) {
-                w = w->one;
-        }
+        w = (p == NULL) ? w : p->one;
+
+        while (w->type != WINDOW_WINDOW)
+                w = w->two;
 
         return w;
 }
@@ -221,8 +212,8 @@ window_vsplit(struct window *w, struct buffer *buffer)
 
         w->bot->buffer = buffer;
 
-        refreshdimensions(w->left);
-        refreshdimensions(w->right);
+        refreshdimensions(w->top);
+        refreshdimensions(w->bot);
 
         w->force_redraw = true;
 }

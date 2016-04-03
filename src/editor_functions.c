@@ -637,7 +637,7 @@ builtin_editor_write_file(value_vector *args)
         }
 
         if (args->count != 1)
-                vm_panic("buffer::writeFile() expects 0 or 1 argument but got %zu", args->count);
+                vm_panic("buffer::writeFile() expects 0 or 1 arguments but got %zu", args->count);
 
         struct value filename = args->items[0];
 
@@ -668,3 +668,46 @@ builtin_editor_show_console(value_vector *args)
         buffer_show_console();
         return NIL;
 }
+
+struct value
+builtin_editor_horizontal_split(value_vector *args)
+{
+        ASSERT_ARGC("window::horizontalSplit()", 0);
+        return INTEGER(buffer_horizontal_split());
+}
+
+struct value
+builtin_editor_vertical_split(value_vector *args)
+{
+        ASSERT_ARGC("window::verticalSplit()", 0);
+        return INTEGER(buffer_vertical_split());
+}
+
+struct value
+builtin_editor_current_window(value_vector *args)
+{
+        ASSERT_ARGC("window::current()", 0);
+        return INTEGER(buffer_current_window());
+}
+
+struct value
+builtin_editor_delete_window(value_vector *args)
+{
+        if (args->count == 0) {
+                buffer_delete_current_window();
+                return NIL;
+        }
+
+        if (args->count != 1)
+                vm_panic("window::delete() expects 0 or 1 arguments but got %zu", args->count);
+
+        struct value id = args->items[0];
+
+        if (id.type != VALUE_INTEGER)
+                vm_panic("non-integer passed to window::delete()");
+
+        buffer_delete_window(id.integer);
+
+        return NIL;
+}
+

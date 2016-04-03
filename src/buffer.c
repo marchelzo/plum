@@ -254,6 +254,29 @@ adjust_scroll(void)
         }
 }
 
+inline static char *
+renderstatus(char *dst)
+{
+        char *status_size = dst;
+        dst += sizeof (int);
+
+        int n = sprintf(
+                dst,
+                " %-*s%d,%d",
+                cols - 20,
+                file.path == NULL ? "[No Name]" : file.path,
+                tb_line(&data) + 1,
+                tb_column(&data) + 1
+        );
+
+        n += sprintf(dst + n, "%*s", cols - n, " ");
+
+        memcpy(status_size, &n, sizeof (int));
+        dst += n;
+
+        return dst;
+}
+
 /*
  * Write all of the data necessary to display the contents of this buffer into the shared memory, so
  * that the parent process can read it and update the display.
@@ -277,24 +300,11 @@ render(void)
 
         struct location screenloc = screenlocation();
 
-        char *status_size = dst;
-        dst += sizeof (int);
-
-        int n = sprintf(
-                dst,
-                " %-*s%d,%d",
-                cols - 20,
-                file.path == NULL ? "[No Name]" : file.path,
-                tb_line(&data) + 1,
-                tb_column(&data) + 1
-        );
-
-        memcpy(status_size, &n, sizeof (int));
-        dst += n;
+        dst = renderstatus(dst);
 
         dst = writeint(dst, screenloc.line);
         dst = writeint(dst, screenloc.col);
-        dst = writeint(dst, state.mode == STATE_INSERT);
+        *dst++ = (state.mode == STATE_INSERT);
 
         tb_draw(&data, dst, scroll.line, scroll.col, lines, cols);
 
@@ -361,7 +371,6 @@ handle_editor_event(int ev)
                 bytes = recvint(read_fd);
                 read(read_fd, input_buffer, bytes);
                 input_buffer[bytes] = '\0';
-                LOG("GOT TEST: '%s'", input_buffer);
                 state_push_input(&state, input_buffer);
                 checkinput();
                 break;
@@ -992,6 +1001,64 @@ void
 buffer_show_console(void)
 {
         evt_send(write_fd, EVT_SHOW_CONSOLE_REQUEST);
+}
+
+int
+buffer_horizontal_split(void)
+{
+        evt_send(write_fd, EVT_HSPLIT_REQUEST);
+
+        buffer_event_code ev;
+        for (;;) {
+                ev = evt_recv(read_fd);
+                if (ev == EVT_WINDOW_ID)
+                        return recvint(read_fd);
+                else
+                        handle_editor_event(ev);
+        }
+}
+
+int
+buffer_vertical_split(void)
+{
+        evt_send(write_fd, EVT_VSPLIT_REQUEST);
+
+        buffer_event_code ev;
+        for (;;) {
+                ev = evt_recv(read_fd);
+                if (ev == EVT_WINDOW_ID)
+                        return recvint(read_fd);
+                else
+                        handle_editor_event(ev);
+        }
+}
+
+int
+buffer_current_window(void)
+{
+        evt_send(write_fd, EVT_WINDOW_ID);
+
+        buffer_event_code ev;
+        for (;;) {
+                ev = evt_recv(read_fd);
+                if (ev == EVT_WINDOW_ID)
+                        return recvint(read_fd);
+                else
+                        handle_editor_event(ev);
+        }
+}
+
+void
+buffer_delete_window(int id)
+{
+        evt_send(write_fd, EVT_WINDOW_DELETE_REQUEST);
+        sendint(write_fd, id);
+}
+
+void
+buffer_delete_current_window(void)
+{
+        evt_send(write_fd, EVT_WINDOW_DELETE_CURRENT_REQUEST);
 }
 
 void

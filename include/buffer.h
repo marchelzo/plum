@@ -187,6 +187,21 @@ buffer_file_name(void);
 void
 buffer_show_console(void);
 
+int
+buffer_horizontal_split(void);
+
+int
+buffer_vertical_split(void);
+
+int
+buffer_current_window(void);
+
+void
+buffer_delete_window(int id);
+
+void
+buffer_delete_current_window(void);
+
 void
 blog(char const *fmt, ...);
 

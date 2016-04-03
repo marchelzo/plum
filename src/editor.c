@@ -22,7 +22,10 @@ deletewindow(struct editor *e, struct window *w)
 inline static struct buffer *
 newbuffer(struct editor *e)
 {
-        return vec_push(e->buffers, buffer_new(e->nextbufid++));
+        struct buffer *b = alloc(sizeof *b);
+        *b = buffer_new(e->nextbufid++);
+        vec_push(e->buffers, b);
+        return b;
 }
 
 inline static void
@@ -45,6 +48,7 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
         static char buf[1024];
         int bytes;
         int amount;
+        int id;
 
         switch (c) {
         case EVT_GROW_X_REQUEST:
@@ -64,8 +68,36 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                 if (b->window == e->current_window) {
                         e->current_window = window_prev(b->window);
                 }
-        case EVT_HSPLIT_REQUEST: // TODO
-        case EVT_VSPLIT_REQUEST: // TODO
+                break;
+        case EVT_HSPLIT_REQUEST:
+                if (b->window != NULL) {
+                        window_hsplit(b->window, newbuffer(e));
+                        e->current_window = b->window;
+                        evt_send(b->write_fd, EVT_WINDOW_ID);
+                        sendint(b->write_fd, WINDOW_SIBLING(b->window)->id);
+                }
+                break;
+        case EVT_VSPLIT_REQUEST:
+                if (b->window != NULL) {
+                        window_vsplit(b->window, newbuffer(e));
+                        e->current_window = b->window;
+                        evt_send(b->write_fd, EVT_WINDOW_ID);
+                        sendint(b->write_fd, WINDOW_SIBLING(b->window)->id);
+                }
+                break;
+        case EVT_WINDOW_ID:
+                evt_send(b->write_fd, EVT_WINDOW_ID);
+                if (b->window == NULL)
+                        sendint(b->write_fd, -1);
+                else
+                        sendint(b->write_fd, b->window->id);
+                break;
+        case EVT_WINDOW_DELETE_REQUEST:
+                id = recvint(b->read_fd);
+                // TODO
+                break;
+        case EVT_WINDOW_DELETE_CURRENT_REQUEST:
+                deletewindow(e, b->window);
                 break;
         case EVT_SHOW_CONSOLE_REQUEST:
                 showconsole(e);
@@ -93,7 +125,7 @@ findbuffer(struct editor *e, unsigned id)
 
         while (lo <= hi) {
                 int mid = lo/2 + hi/2 + (hi & lo & 1);
-                struct buffer *b = vec_get(e->buffers, mid);
+                struct buffer *b = *vec_get(e->buffers, mid);
                 if (b->id > id) {
                         hi = mid - 1;
                 } else if (b->id < id) {
@@ -117,8 +149,8 @@ handle_events(struct editor *e)
 
         buffer_event_code c;
         for (int i = 0; i < n; ++i) {
-                if (read(vec_get(e->buffers, i)->read_fd, &c, sizeof c) == 1) {
-                        handle_event(e, c, vec_get(e->buffers, i));
+                if (read(vec_get(e->buffers, i)[0]->read_fd, &c, sizeof c) == 1) {
+                        handle_event(e, c, *vec_get(e->buffers, i));
                 } else if (errno != EWOULDBLOCK) {
                         panic("read() failed: %s", strerror(errno));
                 }
@@ -205,9 +237,9 @@ editor_destroy_buffer(struct editor *e, unsigned buf_id)
 void
 editor_destroy_all_buffers(struct editor *e)
 {
-        struct buffer *b;
+        struct buffer **b;
         vec_for_each(e->buffers, _, b) {
-                kill(b->pid, SIGTERM);
+                kill(b[0]->pid, SIGTERM);
         }
 }
 
