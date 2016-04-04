@@ -42,6 +42,7 @@ inline static void
 markall(struct input_state *s)
 {
         if (s == NULL)
+                return;
 
         if (s->has_action)
                 value_mark(&s->f);

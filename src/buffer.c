@@ -330,9 +330,6 @@ handle_editor_event(int ev)
         int bytes;
         int newlines, newcols;
         char buf[4096];
-        int status;
-        struct key key;
-        struct value action;
 
         switch (ev) {
         case EVT_LOAD_FILE: {
@@ -399,18 +396,7 @@ handle_editor_event(int ev)
                         }
                 } else {
                         state_push_input(&state, input_buffer);
-                        while ((status = state_handle_input(&state, &action, &key)) != STATE_NOTHING) {
-                                switch (status) {
-                                case STATE_ACTION_READY:
-                                        vm_eval_function(&action, NULL);
-                                        break;
-                                case STATE_NOT_BOUND:
-                                        if (state.mode == STATE_INSERT) {
-                                                tb_insert(&data, key.str, strlen(key.str));
-                                        }
-                                        break;
-                                }
-                        }
+                        checkinput();
                 }
         }
 }

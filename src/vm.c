@@ -217,6 +217,8 @@ vm_exec(char *code)
         struct string *str;
 
         value_vector args;
+        vec_init(args);
+
         struct value (*func)(struct value *, value_vector *);
 
         struct variable *next;
@@ -751,7 +753,6 @@ vm_exec(char *code)
                                 vec_push(callstack, ip);
                                 ip = v.code;
                         } else if (v.type == VALUE_BUILTIN_FUNCTION) {
-                                vec_init(args);
                                 READVALUE(n);
                                 vec_reserve(args, n);
                                 args.count = n;
@@ -759,6 +760,7 @@ vm_exec(char *code)
                                         args.items[n] = pop();
                                 }
                                 push(v.builtin_function(&args));
+                                args.count = 0;
                         } else if (v.type == VALUE_TAG) {
                                 READVALUE(n);
                                 if (n != 1) {
@@ -803,7 +805,6 @@ vm_exec(char *code)
                                         vm_panic("call to non-existent array method: %s", ip);
                                 }
                                 ip += strlen(ip) + 1;
-                                vec_init(args);
                                 READVALUE(n);
                                 vec_reserve(args, n);
                                 args.count = n;
@@ -813,6 +814,7 @@ vm_exec(char *code)
                                         args.items[index] = *a;
                                 }
                                 v = func(&value, &args);
+                                args.count = 0;
                                 stack.count -= n;
                                 stack.items[stack.count - 1] = v;
                                 --gc_prevent;
@@ -1006,13 +1008,10 @@ vm_eval_function(struct value const *f, struct value const *v)
 
                 return pop();
         } else {
-                LOG("applying built-in function...");
-                value_vector args;
-                vec_init(args);
-                if (v != NULL) {
-                        vec_push(args, *v);
-                }
-                return f->builtin_function(&args);
+                if (v == NULL)
+                        return f->builtin_function(&(value_vector){ .count = 0 });
+                else
+                        return f->builtin_function(&(value_vector){ .count = 1, .items = v });
         }
 }
 

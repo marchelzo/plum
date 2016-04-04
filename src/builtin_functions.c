@@ -153,7 +153,9 @@ builtin_str(value_vector *args)
                 return arg;
         } else {
                 char const *str = value_show(&arg);
-                return STRING_CLONE(str, strlen(str));
+                struct value result = STRING_CLONE(str, strlen(str));
+                free(str);
+                return result;
         }
 }
 
