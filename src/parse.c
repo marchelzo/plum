@@ -92,6 +92,8 @@ static vec(struct token) tokens;
 static int tokidx = 0;
 enum lex_context lex_ctx = LEX_PREFIX;
 
+static int depth;
+
 static struct statement BREAK_STATEMENT    = { .type = STATEMENT_BREAK,    .loc = {42, 42} };
 static struct statement CONTINUE_STATEMENT = { .type = STATEMENT_CONTINUE, .loc = {42, 42} };
 static struct statement NULL_STATEMENT     = { .type = STATEMENT_NULL,     .loc = {42, 42} };
@@ -1533,6 +1535,10 @@ parse_expr(int prec)
 {
         struct expression *e;
 
+        if (++depth > 256)
+                error("exceeded maximum recursion depth of 256");
+
+
         parse_fn *f = get_prefix_parser();
         if (f == NULL) {
                 error("expected expression but found %s", token_show(tok()));
@@ -1547,6 +1553,8 @@ parse_expr(int prec)
                 }
                 e = f(e);
         }
+
+        --depth;
 
         return e;
 }
@@ -1701,6 +1709,8 @@ parse(char const *source)
 {
         vec(struct statement *) program;
         vec_init(program);
+
+        depth = 0;
 
         vec_init(tokens);
         tokidx = 0;
