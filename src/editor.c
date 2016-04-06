@@ -13,10 +13,15 @@
 inline static void
 deletewindow(struct editor *e, struct window *w)
 {
-        if (e->current_window->parent == w->parent)
+        bool move = e->current_window->parent == w->parent;
+        if (move)
                 e->current_window = w->parent;
 
         window_delete(w);
+
+        if (move)
+                e->current_window = window_find_leaf(e->current_window);
+
 }
 
 inline static struct buffer *
@@ -217,9 +222,7 @@ editor_view_buffer(struct editor *e, struct window *w, unsigned buf_id)
         w->buffer = b;
         b->window = w;
 
-        evt_send(b->write_fd, EVT_WINDOW_DIMENSIONS);
-        sendint(b->write_fd, w->height - 1);
-        sendint(b->write_fd, w->width);
+        window_notify_dimensions(w);
 }
 
 /*

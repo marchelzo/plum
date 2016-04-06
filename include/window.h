@@ -47,6 +47,12 @@ window_new(
         int height
 );
 
+void
+window_notify_dimensions(struct window const *w);
+
+struct window *
+window_find_leaf(struct window *w);
+
 struct window *
 window_next(struct window *);
 

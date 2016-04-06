@@ -56,7 +56,7 @@ render_window(struct window *w)
 
         attron(A_BOLD);
         bkgdset(A_REVERSE);
-        mvaddnstr(w->y + w->height - 1, w->x, src, bytes);
+        mvaddnstr(w->y + w->height - 2, w->x, src, bytes);
         attroff(A_BOLD);
         bkgdset(A_NORMAL);
 

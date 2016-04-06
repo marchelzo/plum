@@ -12,16 +12,20 @@ static int winid = 0;
 static void
 refreshdimensions(struct window *w)
 {
-        if (w->buffer == NULL)
-                return;
+        switch (w->type) {
+        case WINDOW_WINDOW:
+                if (w->buffer == NULL)
+                        return;
+                w->buffer->window = w;
+                window_notify_dimensions(w);
+                break;
+        case WINDOW_HSPLIT:
+        case WINDOW_VSPLIT:
+                refreshdimensions(w->one);
+                refreshdimensions(w->two);
+                break;
 
-        w->buffer->window = w;
-
-        LOG("Refreshing with dimensions (%d, %d)", w->height - 1, w->width);
-        
-        evt_send(w->buffer->write_fd, EVT_WINDOW_DIMENSIONS);
-        sendint(w->buffer->write_fd, w->height - 1);
-        sendint(w->buffer->write_fd, w->width);
+        }
 }
 
 static void
@@ -84,6 +88,23 @@ window_new(
         w->height = height;
         w->force_redraw = true;
         w->insert_mode = false;
+
+        return w;
+}
+
+void
+window_notify_dimensions(struct window const *w)
+{
+        evt_send(w->buffer->write_fd, EVT_WINDOW_DIMENSIONS);
+        sendint(w->buffer->write_fd, w->height - 2);
+        sendint(w->buffer->write_fd, w->width);
+}
+
+struct window *
+window_find_leaf(struct window *w)
+{
+        while (w->type != WINDOW_WINDOW)
+                w = w->one;
 
         return w;
 }
@@ -252,14 +273,27 @@ window_delete(struct window *w)
         struct window *parent = w->parent;
         struct window *sibling = WINDOW_SIBLING(w);
 
-        parent->type = sibling->type;
         if (sibling->type == WINDOW_WINDOW) {
                 parent->buffer = sibling->buffer;
                 parent->id = sibling->id;
         } else {
                 parent->one = sibling->one;
                 parent->two = sibling->two;
+                parent->one->parent = parent;
+                parent->two->parent = parent;
+                switch (parent->type) {
+                case WINDOW_HSPLIT:
+                        parent->one->width = parent->width;
+                        parent->two->width = parent->width;
+                        break;
+                case WINDOW_VSPLIT:
+                        parent->one->height = parent->height;
+                        parent->two->height = parent->height;
+                        break;
+                }
         }
+
+        parent->type = sibling->type;
 
         refreshdimensions(parent);
         w->buffer->window = NULL;
