@@ -31,9 +31,10 @@ struct window {
                         struct window *two;
                 };
                 struct {
-                        unsigned id;
+                        WINDOW *window;
                         struct buffer *buffer;
                         struct { int x, y; } cursor;
+                        unsigned id;
                 };
         };
 };

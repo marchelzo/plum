@@ -7,6 +7,8 @@
 #include "buffer.h"
 #include "log.h"
 
+#define delwin(w) (wclear(w), wnoutrefresh(w), delwin(w))
+
 static int winid = 0;
 
 static void
@@ -26,6 +28,13 @@ refreshdimensions(struct window *w)
                 break;
 
         }
+}
+
+static void
+reconstruct_curses_window(struct window *w)
+{
+        delwin(w->window);
+        w->window = newwin(w->height, w->width, w->y, w->x);
 }
 
 static void
@@ -78,6 +87,7 @@ window_new(
         struct window *w = alloc(sizeof *w);
 
         w->type = WINDOW_WINDOW;
+        w->window = newwin(height, width, y, x);
         w->buffer = NULL;
         w->id = winid++;
 
@@ -223,6 +233,7 @@ window_vsplit(struct window *w, struct buffer *buffer)
 
         unsigned id = w->id;
         struct buffer *b = w->buffer;
+        delwin(w->window);
 
         w->type = WINDOW_VSPLIT;
         w->top = window_new(w, w->x, w->y, w->width, topheight);
@@ -249,6 +260,8 @@ window_hsplit(struct window *w, struct buffer *buffer)
 
         unsigned id = w->id;
         struct buffer *b = w->buffer;
+        werase(w->window);
+        delwin(w->window);
 
         w->type = WINDOW_HSPLIT;
         w->left = window_new(w, w->x, w->y, leftwidth, w->height);
@@ -273,9 +286,13 @@ window_delete(struct window *w)
         struct window *parent = w->parent;
         struct window *sibling = WINDOW_SIBLING(w);
 
+        delwin(w->window);
+
         if (sibling->type == WINDOW_WINDOW) {
                 parent->buffer = sibling->buffer;
                 parent->id = sibling->id;
+                parent->window = sibling->window;
+                reconstruct_curses_window(parent);
         } else {
                 parent->one = sibling->one;
                 parent->two = sibling->two;
@@ -291,6 +308,8 @@ window_delete(struct window *w)
                         parent->two->height = parent->height;
                         break;
                 }
+                reconstruct_curses_window(parent->one);
+                reconstruct_curses_window(parent->two);
         }
 
         parent->type = sibling->type;
