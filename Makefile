@@ -11,6 +11,9 @@ CFLAGS += -lm
 CFLAGS += $(shell pcre-config --libs)
 CFLAGS += -Wno-switch
 
+CFLAGS += -DINSERT_BEGIN_STRING="\"$(PLUM_INSERT_ENTER)\""
+CFLAGS += -DINSERT_END_STRING="\"$(PLUM_INSERT_LEAVE)\""
+
 TEST_FILTER ?= "."
 
 BINARIES = plum repl interpreter

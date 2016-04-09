@@ -9,7 +9,6 @@
 #include <tickit.h>
 
 #include "panic.h"
-#include "config.h"
 #include "editor.h"
 #include "buffer.h"
 #include "render.h"

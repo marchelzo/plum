@@ -475,7 +475,7 @@ buffer_main(void)
                         /* check any subprocesses */
                         static char proc_out_buf[4096];
                         for (int i = 1; i < pollfds.count; ++i) {
-                                if (pollfds.items[i].revents & POLLIN) {
+                                if (pollfds.items[i].revents & (POLLIN | POLLHUP)) {
                                         int r = read(pollfds.items[i].fd, proc_out_buf, sizeof proc_out_buf);
                                         if (r == 0) {
                                                 int fd = pollfds.items[i].fd;
@@ -566,7 +566,7 @@ buffer_new(unsigned id)
                 // lock the renderbuffer mutex and tell the parent
                 rb_lock();
                 evt_send(c2p[1], EVT_CHILD_LOCKED_MUTEX);
-                
+
                 data = tb_new();
                 file = file_invalid();
                 state = state_new();
@@ -621,7 +621,7 @@ buffer_load_file(char const *path)
         tb_seek(&data, 0);
 
         close(fd);
-        
+
         return BUFFER_LOAD_OK;
 }
 
@@ -748,7 +748,7 @@ buffer_scroll_down(int amount)
 
         scroll.line += scrolling;
         adjust_cursor();
-        
+
         return scrolling;
 }
 
@@ -957,7 +957,7 @@ buffer_write_file(char const *path, int n)
                 blog("Filename is too long. Not writing.");
                 return;
         }
-        
+
         memcpy(pathbuf, path, n);
         pathbuf[n] = '\0';
 

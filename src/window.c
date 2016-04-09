@@ -28,6 +28,8 @@ refreshdimensions(struct window *w)
                 break;
 
         }
+
+	w->force_redraw = true;
 }
 
 static void
@@ -64,6 +66,7 @@ propagate(struct window *w, int dx, int dy, int dw, int dh)
                  */
                 if (w->buffer != NULL) {
                         refreshdimensions(w);
+			reconstruct_curses_window(w);
                 }
                 return;
         }

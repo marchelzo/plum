@@ -12,7 +12,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include "config.h"
 #include "editor.h"
 #include "alloc.h"
 #include "location.h"
@@ -41,7 +40,7 @@ render_window(struct window *w)
 
         pthread_mutex_lock(b->rb_mtx);
 
-        if (!*b->rb_changed)
+        if (!*b->rb_changed && !w->force_redraw)
                 goto done;
         else
                 changed = true;
