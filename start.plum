@@ -1,0 +1,172 @@
+import buffer
+import editor
+import window
+import proc
+
+let indent = 4;
+
+buffer::mapInsert(['Enter'], function () {
+        let line = buffer::getLine();
+        let currentIndent = line.chars().takeWhile!(|# == ' '|).len();
+        buffer::insert("\n");
+        for (let i = 0; i < currentIndent; ++i)
+                buffer::insert(' ');
+});
+
+buffer::mapInsert(['C-e'],       buffer::endOfLine);
+buffer::mapInsert(['C-a'],       buffer::startOfLine);
+buffer::mapInsert(['C-n'],       buffer::nextLine);
+buffer::mapInsert(['C-p'],       buffer::prevLine);
+buffer::mapInsert(['C-k'],       buffer::cutLine);
+buffer::mapInsert(['j', 'k'],    buffer::normalMode);
+
+buffer::mapInsert(['Backspace'], function () {
+        let spc = buffer::getLine().chars().take!(buffer::column()).reverse!().takeWhile!(|# == ' '|).len();
+        let remove = min(indent, max(1, spc));
+        if (buffer::backward(remove) == remove)
+                buffer::remove(remove);
+});
+
+buffer::mapNormal(['i'], buffer::insertMode);
+buffer::mapNormal(['a'], function () {
+        buffer::moveRight(1);
+        buffer::insertMode();
+});
+
+buffer::mapNormal(['C-w', '+'], |window::growVertically(4)|);
+buffer::mapNormal(['C-w', '-'], |window::growVertically(-4)|);
+
+buffer::mapNormal(['C-w', '>'], |window::growHorizontally(4)|);
+buffer::mapNormal(['C-w', '<'], |window::growHorizontally(-4)|);
+
+buffer::mapNormal(['C-w', 'C-w'], editor::nextWindow);
+
+buffer::mapNormal(['j'], buffer::nextLine);
+buffer::mapNormal(['k'], buffer::prevLine);
+
+buffer::mapNormal(['g', 'g'], function () {
+        buffer::prevLine(10000000);
+        buffer::startOfLine();
+});
+
+buffer::mapNormal(['G'], function () {
+        buffer::nextLine(100000000);
+        buffer::startOfLine();
+});
+
+buffer::mapNormal(['I'], function () {
+        buffer::startOfLine();
+        while (buffer::getChar() == ' ')
+                buffer::moveRight(1);
+        buffer::insertMode();
+});
+
+buffer::mapNormal(['A'], function () {
+        buffer::endOfLine();
+        buffer::insertMode();
+});
+
+buffer::mapNormal(['o'], function () {
+        buffer::endOfLine();
+        buffer::insert("\n");
+        buffer::insertMode();
+});
+
+buffer::mapNormal(['O'], function () {
+        buffer::startOfLine();
+        buffer::insert("\n");
+        buffer::prevLine();
+        buffer::insertMode();
+});
+
+buffer::mapNormal(['0'], function () {
+        buffer::startOfLine();
+});
+
+buffer::mapNormal(['$'], function () {
+        buffer::endOfLine();
+});
+
+buffer::mapNormal(['x'], function () {
+        buffer::remove(1);
+});
+
+buffer::mapNormal(['h'], function () {
+        buffer::moveLeft(1);
+});
+
+buffer::mapNormal(['l'], function () {
+        buffer::moveRight(1);
+});
+
+buffer::mapNormal(['>', '>'], function () {
+        let i = buffer::column();
+        buffer::startOfLine();
+        buffer::insert("    ");
+        buffer::forward(i);
+});
+
+buffer::mapNormal(['<', '<'], function () {
+        let i = buffer::column();
+        buffer::startOfLine();
+        let l = buffer::getLine();
+        let n = min(4, l.chars().takeWhile!(/\s/).len());
+        buffer::remove(n);
+        buffer::forward(max(i - n, 0));
+});
+
+buffer::mapNormal(['w'], function () {
+        let rest = buffer::getLine().slice(buffer::column()) || '';
+        if let i = rest.search(/\s\S/) {
+                buffer::moveRight(i + 1);
+        }
+});
+
+buffer::mapNormal(['^'], function () {
+        let cs = buffer::getLine().chars();
+        let i = cs.takeWhile!(|#.match?(/\s/)|)
+                  .len();
+        buffer::startOfLine();
+        buffer::forward(i);
+});
+
+buffer::mapNormal(['C'], function () {
+        buffer::cutLine();
+        buffer::insertMode();
+});
+
+buffer::mapNormal(['d', 'd'], function () {
+        buffer::startOfLine();
+        buffer::cutLine();
+        if (buffer::line() == buffer::lines() - 1) {
+                buffer::backward(1);
+        }
+
+        buffer::remove(1);
+
+        buffer::startOfLine();
+});
+
+buffer::mapInsert(['Tab'], function () { buffer::insert([1 .. (indent - (buffer::column() % indent))].map(|' '|).sum()); });
+
+buffer::mapNormal(['u'], buffer::undo);
+
+buffer::mapNormal(['C-r'], buffer::redo);
+
+buffer::mapNormal(['z', 'z'], buffer::centerCurrentLine);
+buffer::mapNormal(['d', 'G'], () -> buffer::remove(100000000));
+buffer::mapNormal(['s'], function () { if (buffer::getChar() != "\n") buffer::remove(1); buffer::insertMode(); });
+buffer::mapNormal(['D'], buffer::cutLine);
+
+let spawnLoop = () -> proc::spawn('bash', ['-c', 'for k in {1..50}; do sleep 0.25 && echo "k = $k"; done'], buffer::insert, () -> buffer::insert("Exited.\n"));
+buffer::mapNormal(['L'], spawnLoop);
+
+let saveFile = function (f) { let p = proc::spawn('bash', ['-c', 'cat > ' + f], nil, nil); [0 .. buffer::lines()).each(i -> proc::writeLine(p, buffer::getLine(i))); proc::close(p); };
+
+buffer::mapNormal(['C-s'], () -> saveFile('MYFILE.txt'));
+
+buffer::mapNormal(['F12'], editor::showConsole);
+
+buffer::mapNormal(['C-w', 'C-v'], window::horizontalSplit);
+buffer::mapNormal(['C-w', 'C-n'], window::verticalSplit);
+buffer::mapNormal(['C-w', 'd'], window::delete);
