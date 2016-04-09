@@ -8,7 +8,12 @@
 
 #include <poll.h>
 #include <sys/stat.h>
+
 #include <sys/mman.h>
+#ifndef MAP_ANONYMOUS /* OS X does not define MAP_ANONYMOUS, but MAP_ANON is deprecated on linux */
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -494,31 +499,31 @@ struct buffer
 buffer_new(unsigned id)
 {
         void *rb1_mem = alloc(BUFFER_RENDERBUFFER_SIZE);
-        rb1 = mmap(rb1_mem, BUFFER_RENDERBUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
+        rb1 = mmap(rb1_mem, BUFFER_RENDERBUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
         if (rb1 == MAP_FAILED) {
                 panic("mmap failed: %s", strerror(errno));
         }
 
         void *rb2_mem = alloc(BUFFER_RENDERBUFFER_SIZE);
-        rb2 = mmap(rb2_mem, BUFFER_RENDERBUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
+        rb2 = mmap(rb2_mem, BUFFER_RENDERBUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
         if (rb2 == MAP_FAILED) {
                 panic("mmap failed: %s", strerror(errno));
         }
 
         void *mtx_mem = alloc(sizeof (pthread_mutex_t));
-        rb_mtx = mmap(mtx_mem, sizeof (pthread_mutex_t), PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
+        rb_mtx = mmap(mtx_mem, sizeof (pthread_mutex_t), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
         if (rb_mtx == MAP_FAILED) {
                 panic("mmap failed: %s", strerror(errno));
         }
 
         void *idx_mem = alloc(sizeof (bool));
-        rb_idx = mmap(idx_mem, sizeof (bool), PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
+        rb_idx = mmap(idx_mem, sizeof (bool), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
         if (rb_idx == MAP_FAILED) {
                 panic("mmap failed: %s", strerror(errno));
         }
 
         void *changed_mem = alloc(sizeof (bool));
-        rb_changed = mmap(changed_mem, sizeof (bool), PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
+        rb_changed = mmap(changed_mem, sizeof (bool), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, -1, 0);
         if (rb_changed == MAP_FAILED) {
                 panic("mmap failed: %s", strerror(errno));
         }
@@ -956,7 +961,7 @@ buffer_write_file(char const *path, int n)
         memcpy(pathbuf, path, n);
         pathbuf[n] = '\0';
 
-        int fd = open(pathbuf, O_WRONLY | O_CREAT | O_EXLOCK, 0666);
+        int fd = open(pathbuf, O_WRONLY | O_CREAT, 0666);
         if (fd == -1) {
                 blog("Failed to open %s for writing: %s", pathbuf, strerror(errno));
         }

@@ -1,11 +1,13 @@
 CC ?= gcc-5
-CFLAGS = -std=c11
+CFLAGS = -std=gnu11
 CFLAGS += -Wall
 CFLAGS += -pedantic
 CFLAGS += -Iinclude
 CFLAGS += -ggdb3
 CFLAGS += -ltickit
 CFLAGS += -lncurses
+CFLAGS += -lpthread
+CFLAGS += -lm
 CFLAGS += $(shell pcre-config --libs)
 CFLAGS += -Wno-switch
 
