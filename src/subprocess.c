@@ -109,10 +109,6 @@ sp_tryspawn(char *path, struct value_array *args, struct value on_output, struct
                 }
                 argv[min(16, args->count + 1)] = NULL;
 
-                /* make stdio line-buffered */
-                setlinebuf(stdin);
-                setlinebuf(stdout);
-
                 if (execvp(path, argv) == -1) {
                         write(exc[1], &errno, sizeof errno);
                         exit(EXIT_FAILURE);
