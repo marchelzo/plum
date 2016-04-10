@@ -61,6 +61,41 @@ stringcount(char const *s, int byte_lim, int col_lim, int grapheme_lim, int line
         utf8_stringcount(s, byte_lim, &outpos, &limitpos);
 }
 
+inline static void
+seekforward(struct tb *s, int n)
+{
+	char const *r = RIGHT(s);
+
+	stringcount(r, n, -1, -1, -1);
+
+	s->column = outpos.column + ((outpos.lines >= 1) ? 0 : s->column);
+	s->character += outpos.graphemes;
+
+	memcpy(s->left + s->leftcount, r, outpos.bytes);
+	s->leftcount += outpos.bytes;
+	s->rightcount -= outpos.bytes;
+}
+
+inline static void
+seekbackward(struct tb *s, int n)
+{
+	char const *l = s->left + s->leftcount - n;
+
+	stringcount(l, n, -1, -1, -1);
+
+	s->character -= outpos.graphemes;
+
+	memcpy(s->right + s->capacity - s->rightcount - outpos.bytes, l, outpos.bytes);
+	s->leftcount -= outpos.bytes;
+	s->rightcount += outpos.bytes;
+
+	char const *start = l;
+	while (start != s->left && start[-1] != '\n')
+		--start;
+
+	s->column = utf8_columncount(start, l - start);
+}
+
 inline static char const *
 getlineptr(struct tb const *s, int line)
 {
@@ -910,6 +945,62 @@ tb_get_char(struct tb const *s, int i)
         return STRING_CLONE(c, bytes);
 }
 
+/*
+ * Find the next occurrence of a string on the current line.
+ */
+bool
+tb_find_next(struct tb *s, char const *c, int n)
+{
+	char const *r = RIGHT(s);
+	char const *end = r + s->rightcount;
+
+	if (s->rightcount == 0 || r[0] == '\n')
+		return false;
+
+	for (char const *rp = utf8_next_char(r, s->rightcount); rp != end; ++rp) {
+		if (end - rp >= n && strncmp(rp, c, n) == 0) {
+			seekforward(s, rp - r);
+			s->highcol = s->column;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/*
+ * Find the previous occurrence of a string on the current line.
+ */
+bool
+tb_find_prev(struct tb *s, char const *c, int n)
+{
+	char const *l = s->left + s->leftcount;
+	char const *end = l;
+
+	while (l != s->left && l[-1] != '\n')
+		--l;
+
+	char const *prev = NULL;
+
+	while (l != end && l[0] != '\n') {
+		if (end - l >= n && strncmp(l, c, n) == 0) {
+			prev = l;
+			l += n;
+		} else {
+			++l;
+		}
+	}
+
+	if (prev == NULL)
+		return false;
+
+	seekbackward(s, end - prev);
+	s->highcol = s->column;
+
+	return true;
+
+}
+
 struct value
 tb_get_line(struct tb const *s, int i)
 {
@@ -1358,3 +1449,33 @@ TEST(undo_grouping)
 
         claim(tb_compare_cstr(&s, "HELLO") == 0);
 }
+
+TEST(find_next)
+{
+        struct tb s = tb_new();
+
+        tb_pushs(&s, "this 乔 乕 乖 乗 hello\n乘 world");
+        tb_seek(&s, 0);
+
+	claim(tb_find_next(&s, "乔", strlen("乔")));
+	claim(s.character == 5);
+
+	claim(!tb_find_next(&s, "z", strlen("z")));
+	claim(s.character == 5);
+}
+
+
+TEST(find_prev)
+{
+        struct tb s = tb_new();
+
+        tb_pushs(&s, "this 乔 乕 乖 乗 hello\n乘 world");
+        tb_seek(&s, 8);
+
+	claim(tb_find_prev(&s, "s", 1));
+	claim(s.character == 3);
+
+	claim(!tb_find_prev(&s, "z", strlen("z")));
+	claim(s.character == 3);
+}
+

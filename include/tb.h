@@ -164,4 +164,10 @@ tb_stop_history(struct tb *s)
 int
 tb_write(struct tb const *s, int fd);
 
+bool
+tb_find_next(struct tb *s, char const *c, int n);
+
+bool
+tb_find_prev(struct tb *s, char const *c, int n);
+
 #endif

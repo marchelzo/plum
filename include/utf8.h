@@ -244,3 +244,18 @@ utf8_nth_char(char const *str, int n, int *nb)
 
         return result;
 }
+
+inline static char *
+utf8_next_char(char const *s, int n)
+{
+	if (n == 0)
+		return NULL;
+
+	if (*s == '\n')
+		return s + 1;
+
+	uint32_t cp;
+	int bytes = next_utf8(s, 64, &cp);
+
+	return s + bytes;
+}
