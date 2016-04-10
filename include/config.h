@@ -1,0 +1,6 @@
+#ifndef CONFIG_H_INCLUDED
+#define CONFIG_H_INCLUDED
+
+#define KEY_CHORD_TIMEOUT_MS 300
+
+#endif
