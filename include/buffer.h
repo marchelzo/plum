@@ -203,6 +203,12 @@ void
 buffer_delete_current_window(void);
 
 void
+buffer_register_message_handler(struct value type, struct value f);
+
+void
+buffer_send_message(int id, char const *type, int tn, char const *msg, int mn);
+
+void
 blog(char const *fmt, ...);
 
 #endif

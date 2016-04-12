@@ -150,4 +150,10 @@ builtin_editor_current_window(value_vector *args);
 struct value
 builtin_editor_delete_window(value_vector *args);
 
+struct value
+builtin_editor_on_message(value_vector *args);
+
+struct value
+builtin_editor_send_message(value_vector *args);
+
 #endif

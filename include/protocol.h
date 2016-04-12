@@ -17,6 +17,7 @@ enum {
         EVT_PARENT_SYNCED_BUFFER,
         EVT_TEXT_INPUT,
         EVT_KEY_INPUT,
+        EVT_MESSAGE,
         EVT_GROW_X_REQUEST,
         EVT_GROW_Y_REQUEST,
         EVT_HSPLIT_REQUEST,

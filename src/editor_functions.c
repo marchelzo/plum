@@ -534,7 +534,7 @@ builtin_editor_seek(value_vector *args)
 struct value
 builtin_editor_spawn(value_vector *args)
 {
-        ASSERT_ARGC("buffer::spawn()", 4);
+        ASSERT_ARGC("proc::spawn()", 4);
 
         struct value path = args->items[0];
         struct value argv = args->items[1];
@@ -542,20 +542,20 @@ builtin_editor_spawn(value_vector *args)
         struct value on_exit = args->items[3];
 
         if (path.type != VALUE_STRING)
-                vm_panic("non-string passed as the first argument to buffer::spawn()");
+                vm_panic("non-string passed as the first argument to proc::spawn()");
 
         if (argv.type != VALUE_ARRAY)
-                vm_panic("non-array passed as the second argument to buffer::spawn()");
+                vm_panic("non-array passed as the second argument to proc::spawn()");
 
         for (int i = 0; i < argv.array->count; ++i)
                 if (argv.array->items[i].type != VALUE_STRING)
-                        vm_panic("args array passed to buffer::spawn() contains a non-string at index %d", i);
+                        vm_panic("args array passed to proc::spawn() contains a non-string at index %d", i);
 
         if (on_out.type != VALUE_FUNCTION && on_out.type != VALUE_BUILTIN_FUNCTION && on_out.type != VALUE_NIL)
-                vm_panic("the output handler (3rd argument) to buffer::spawn() must be either nil or a function");
+                vm_panic("the output handler (3rd argument) to proc::spawn() must be either nil or a function");
 
         if (on_exit.type != VALUE_FUNCTION && on_exit.type != VALUE_BUILTIN_FUNCTION && on_exit.type != VALUE_NIL)
-                vm_panic("the exit handler (4th argument) to buffer::spawn() must be either nil or a function");
+                vm_panic("the exit handler (4th argument) to proc::spawn() must be either nil or a function");
 
         /*
          * This is freed in buffer_spawn if the spawn fails, or by sp_on_exit
@@ -711,3 +711,53 @@ builtin_editor_delete_window(value_vector *args)
         return NIL;
 }
 
+struct value
+builtin_editor_on_message(value_vector *args)
+{
+        ASSERT_ARGC("buffer::onMessage()", 2);
+
+        struct value type = args->items[0];
+        struct value f = args->items[1];
+
+        if (type.type != VALUE_STRING)
+                vm_panic("non-string passed as first argument to buffer::onMessage()");
+
+        if (f.type != VALUE_FUNCTION && f.type != VALUE_BUILTIN_FUNCTION)
+                vm_panic("non-function passed as second argument to buffer::onMessage()");
+
+        buffer_register_message_handler(type, f);
+
+        return NIL;
+}
+
+struct value
+builtin_editor_send_message(value_vector *args)
+{
+        if (args->count != 2 && args->count != 3)
+                vm_panic("buffer::sendMessage() expects 2 or 3 arguments but got %zu", args->count);
+
+        struct value id = args->items[0];
+        if (id.type != VALUE_INTEGER)
+                vm_panic("non-integer passed as first argument to buffer::sendMessage()");
+
+        struct value type = args->items[1];
+        if (type.type != VALUE_STRING)
+                vm_panic("non-string passed as second argument to buffer::sendMessage()");
+
+        struct value msg = NIL;
+        if (args->count == 3) {
+                msg = args->items[2];
+                if (msg.type != VALUE_STRING)
+                        vm_panic("non-string passed as third argument to buffer::sendMessage()");
+        }
+
+        buffer_send_message(
+                id.integer,
+                type.string,
+                type.bytes,
+                (msg.type == VALUE_NIL) ? NULL : msg.string,
+                (msg.type == VALUE_NIL) ? -1   : msg.bytes
+        );
+
+        return NIL;
+}

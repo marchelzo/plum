@@ -3,27 +3,30 @@
 
 #include "vec.h"
 #include "value.h"
+#include "object.h"
 
 enum event_type {
 
-        EVENT_WRITE_PRE       = 1 << 0,
-        EVENT_WRITE_POST      = 1 << 1,
+        EVENT_WRITE_PRE,
+        EVENT_WRITE_POST,
 
-        EVENT_OPEN_PRE        = 1 << 2,
-        EVENT_OPEN_POST       = 1 << 3,
+        EVENT_OPEN_PRE,
+        EVENT_OPEN_POST,
 
-        EVENT_ENTER_PRE       = 1 << 4,
-        EVENT_ENTER_POST      = 1 << 5,
+        EVENT_ENTER_PRE,
+        EVENT_ENTER_POST,
 
-        EVENT_LEAVE_PRE       = 1 << 6,
-        EVENT_LEAVE_POST      = 1 << 7,
+        EVENT_LEAVE_PRE,
+        EVENT_LEAVE_POST,
 
-        EVENT_CLOSE_PRE       = 1 << 8,
-        EVENT_CLOSE_POST      = 1 << 9,
+        EVENT_CLOSE_PRE,
+        EVENT_CLOSE_POST,
 
-        EVENT_BACKGROUND_PRE  = 1 << 10,
-        EVENT_BACKGRONUD_POST = 1 << 11,
+        EVENT_BACKGROUND_PRE,
+        EVENT_BACKGRONUD_POST,
 
+        NUM_EVENTS
+        
 };
 
 enum {
@@ -60,7 +63,10 @@ struct key {
  * okay
  */
 struct state {
-        vec(struct event_handler) event_handlers;
+
+        vec(struct value) event_handlers[NUM_EVENTS];
+
+        struct object *message_handlers;
 
         /*
          * Start states of each FSM.
@@ -112,5 +118,11 @@ state_pending_input(struct state *s)
 {
         return s->current_state->has_action || (s->mode == STATE_INSERT && s->current_state != s->insert_start);
 }
+
+void
+state_register_message_handler(struct state *s, struct value type, struct value f);
+
+void
+state_handle_message(struct state *s, struct value bufid, struct value type, struct value msg);
 
 #endif

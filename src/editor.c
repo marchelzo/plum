@@ -45,15 +45,41 @@ showconsole(struct editor *e)
 }
 
 /*
+ * Binary search for a buffer given a buffer id.
+ */
+static struct buffer *
+findbuffer(struct editor *e, unsigned id)
+{
+        int lo = 0;
+        int hi = vec_len(e->buffers) - 1;
+
+        while (lo <= hi) {
+                int mid = lo/2 + hi/2 + (hi & lo & 1);
+                struct buffer *b = *vec_get(e->buffers, mid);
+                if (b->id > id) {
+                        hi = mid - 1;
+                } else if (b->id < id) {
+                        lo = mid + 1;
+                } else {
+                        return b;
+                }
+        }
+
+        return NULL;
+}
+
+/*
  * Handle an event received from a buffer.
  */
 static void
 handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
 {
-        static char buf[1024];
-        int bytes;
-        int amount;
-        int id;
+        static struct buffer *buffer;
+        static char buf[4096];
+        static char msgbuf[256];
+        static int bytes, msgbytes;
+        static int amount;
+        static int id;
 
         switch (c) {
         case EVT_GROW_X_REQUEST:
@@ -107,6 +133,32 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
         case EVT_SHOW_CONSOLE_REQUEST:
                 showconsole(e);
                 break;
+        case EVT_MESSAGE:
+                id = recvint(b->read_fd);
+                msgbytes = recvint(b->read_fd);
+                read(b->read_fd, msgbuf, msgbytes);
+                bytes = recvint(b->read_fd);
+                if (bytes != -1)
+                        read(b->read_fd, buf, bytes);
+                buffer = findbuffer(e, id);
+                if (buffer == NULL) {
+                        evt_send(e->console->write_fd, EVT_LOG_REQUEST);
+                        bytes = sprintf(buf, "Invalid buffer ID used as message target: %d", id);
+                        sendint(e->console->write_fd, bytes);
+                        write(e->console->write_fd, buf, bytes);
+                } else {
+                        evt_send(buffer->write_fd, EVT_MESSAGE);
+
+                        sendint(buffer->write_fd, b->id);
+
+                        sendint(buffer->write_fd, msgbytes);
+                        write(buffer->write_fd, msgbuf, msgbytes);
+
+                        sendint(buffer->write_fd, bytes);
+                        if (bytes != -1)
+                                write(buffer->write_fd, buf, bytes);
+                }
+                break;
         case EVT_VM_ERROR:
                 beep();
         case EVT_LOG_REQUEST:
@@ -117,30 +169,6 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                 write(e->console->write_fd, buf, bytes);
                 break;
         }
-}
-
-/*
- * Binary search for a buffer given a buffer id.
- */
-static struct buffer *
-findbuffer(struct editor *e, unsigned id)
-{
-        int lo = 0;
-        int hi = vec_len(e->buffers) - 1;
-
-        while (lo <= hi) {
-                int mid = lo/2 + hi/2 + (hi & lo & 1);
-                struct buffer *b = *vec_get(e->buffers, mid);
-                if (b->id > id) {
-                        hi = mid - 1;
-                } else if (b->id < id) {
-                        lo = mid + 1;
-                } else {
-                        return b;
-                }
-        }
-
-        return NULL;
 }
 
 /*

@@ -1,9 +1,9 @@
 #include <string.h>
-#include <sys/time.h>
 
 #include "log.h"
 #include "value.h"
 #include "alloc.h"
+#include "vm.h"
 #include "state.h"
 
 #define STARTSTATE(s) ((s)->mode == STATE_NORMAL ? (s)->normal_start : (s)->insert_start)
@@ -108,8 +108,12 @@ state_new(void)
 {
         struct state state;
 
-        vec_init(state.event_handlers);
         vec_init(state.input_buffer);
+
+        for (int i = 0; i < NUM_EVENTS; ++i)
+                vec_init(state.event_handlers[i]);
+
+        state.message_handlers = object_new();
 
         state.action = NULL;
         state.action_index = 0;
@@ -233,4 +237,18 @@ state_mark_actions(struct state *s)
 {
         markall(s->normal_start);
         markall(s->insert_start);
+}
+
+void
+state_register_message_handler(struct state *s, struct value type, struct value f)
+{
+        object_put_value(s->message_handlers, type, f);
+}
+
+void
+state_handle_message(struct state *s, struct value bufid, struct value type, struct value msg)
+{
+        struct value *f = object_get_value(s->message_handlers, &type);
+        if (f != NULL)
+                vm_eval_function2(f, &bufid, &msg);
 }

@@ -332,9 +332,12 @@ source_init_files(void)
 static void
 handle_editor_event(int ev)
 {
+        int id;
         int bytes;
         int newlines, newcols;
-        char buf[4096];
+        static char msgbuf[256];
+        static char buf[4096];
+        static struct value type;
 
         switch (ev) {
         case EVT_LOAD_FILE: {
@@ -368,6 +371,19 @@ handle_editor_event(int ev)
                 newlines = recvint(read_fd);
                 newcols = recvint(read_fd);
                 updatedimensions(newlines, newcols);
+                break;
+        case EVT_MESSAGE:
+                id = recvint(read_fd);
+                bytes = recvint(read_fd);
+                read(read_fd, msgbuf, bytes);
+                type = STRING_NOGC(msgbuf, bytes);
+                bytes = recvint(read_fd);
+                if (bytes == -1) {
+                        state_handle_message(&state, INTEGER(id), type, NIL);
+                } else {
+                        read(read_fd, buf, bytes);
+                        state_handle_message(&state, INTEGER(id), type, STRING_CLONE(buf, bytes));
+                }
                 break;
         case EVT_TEXT_INPUT:
                 bytes = recvint(read_fd);
@@ -1050,6 +1066,28 @@ void
 buffer_delete_current_window(void)
 {
         evt_send(write_fd, EVT_WINDOW_DELETE_CURRENT_REQUEST);
+}
+
+void
+buffer_send_message(int id, char const *type, int tn, char const *msg, int mn)
+{
+        evt_send(write_fd, EVT_MESSAGE);
+
+        sendint(write_fd, id);
+
+        sendint(write_fd, tn);
+        write(write_fd, type, tn);
+
+        sendint(write_fd, mn);
+        if (mn != -1) {
+                write(write_fd, msg, mn);
+        }
+}
+
+void
+buffer_register_message_handler(struct value type, struct value f)
+{
+        state_register_message_handler(&state, type, f);
 }
 
 void
