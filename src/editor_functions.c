@@ -761,3 +761,10 @@ builtin_editor_send_message(value_vector *args)
 
         return NIL;
 }
+
+struct value
+builtin_editor_buffer_id(value_vector *args)
+{
+        ASSERT_ARGC("buffer::id()", 0);
+        return INTEGER(buffer_id());
+}

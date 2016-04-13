@@ -70,6 +70,9 @@ static int read_fd;
 /* write to this to send data to the parent */
 static int write_fd;
 
+/* the id of this buffer process */
+static int bufid;
+
 /*
  * fds that we poll in the main buffer loop.
  * The fd for reading events from the editor,
@@ -588,6 +591,7 @@ buffer_new(unsigned id)
                 state = state_new();
                 read_fd = p2c[0];
                 write_fd = c2p[1];
+                bufid = id;
 
                 buffer_main();
         } else {        // parent
@@ -977,9 +981,10 @@ buffer_write_file(char const *path, int n)
         memcpy(pathbuf, path, n);
         pathbuf[n] = '\0';
 
-        int fd = open(pathbuf, O_WRONLY | O_CREAT, 0666);
+        int fd = open(pathbuf, O_WRONLY | O_TRUNC | O_CREAT, 0666);
         if (fd == -1) {
                 blog("Failed to open %s for writing: %s", pathbuf, strerror(errno));
+                return;
         }
 
         tb_write(&data, fd);
@@ -1088,6 +1093,12 @@ void
 buffer_register_message_handler(struct value type, struct value f)
 {
         state_register_message_handler(&state, type, f);
+}
+
+int
+buffer_id(void)
+{
+        return bufid;
 }
 
 void

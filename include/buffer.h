@@ -208,6 +208,9 @@ buffer_register_message_handler(struct value type, struct value f);
 void
 buffer_send_message(int id, char const *type, int tn, char const *msg, int mn);
 
+int
+buffer_id(void);
+
 void
 blog(char const *fmt, ...);
 

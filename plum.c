@@ -81,7 +81,7 @@ int main(void)
 
         tickit_term_bind_event(term, TICKIT_EV_KEY, 0, handle_term_input_event, &e);
 
-        unsigned b1 = editor_create_file_buffer(&e, "src/buffer.c");
+        unsigned b1 = editor_create_file_buffer(&e, "");
         editor_view_buffer(&e, e.current_window, b1);
 
         for (;;) {
