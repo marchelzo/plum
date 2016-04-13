@@ -107,7 +107,6 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
         case EVT_VSPLIT_REQUEST:
                 if (split == NULL)
                         split = window_vsplit;
-                        split = window_vsplit;
                 if (b->window != NULL) {
                         id = recvint(b->read_fd);
                         buffer = (id == -1) ? newbuffer(e) : findbuffer(e, id);
@@ -193,26 +192,6 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                 break;
         }
 }
-
-/*
- * Check the pipe of each buffer process to see if any of them have
- * sent any data to us.
- */
-static void
-handle_events(struct editor *e)
-{
-        int n = vec_len(e->buffers);
-
-        buffer_event_code c;
-        for (int i = 0; i < n; ++i) {
-                if (read(vec_get(e->buffers, i)[0]->read_fd, &c, sizeof c) == 1) {
-                        handle_event(e, c, *vec_get(e->buffers, i));
-                } else if (errno != EWOULDBLOCK) {
-                        panic("read() failed: %s", strerror(errno));
-                }
-        }
-}
-
 
 /*
  * Get a pointer to the editor's current buffer.
@@ -336,8 +315,20 @@ editor_handle_text_input(struct editor *e, char const *s)
         write(b->write_fd, s, bytes);
 }
 
+/*
+ * Check the pipe of each buffer process to see if any of them have
+ * sent any data to us.
+ */
 void
 editor_do_update(struct editor *e)
 {
-        handle_events(e);
+        int n = vec_len(e->buffers);
+
+        buffer_event_code c;
+        for (int i = 0; i < n; ++i) {
+                while (read(vec_get(e->buffers, i)[0]->read_fd, &c, sizeof c) == 1)
+                        handle_event(e, c, *vec_get(e->buffers, i));
+                if (errno != EWOULDBLOCK)
+                        panic("read() failed: %s", strerror(errno));
+        }
 }
