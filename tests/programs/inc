@@ -1,5 +1,0 @@
-let inc = function (k) {
-        return k + 1;
-};
-
-print(inc(4));
