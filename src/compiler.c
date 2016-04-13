@@ -1025,7 +1025,7 @@ emit_try_match(struct expression const *pattern)
                         }
                 }
 
-                if (pattern->elements.items[pattern->elements.count - 1]->type != EXPRESSION_MATCH_REST) {
+                if (pattern->elements.count == 0 || pattern->elements.items[pattern->elements.count - 1]->type != EXPRESSION_MATCH_REST) {
                         emit_instr(INSTR_ENSURE_LEN);
                         emit_int(pattern->elements.count);
                         vec_push(state.match_fails, state.code.count);

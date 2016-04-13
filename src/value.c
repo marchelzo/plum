@@ -519,6 +519,13 @@ value_array_clone(struct value_array const *a)
 {
         struct value_array *new = value_array_new();
 
+        /*
+         * If a is empty, then we'd end up passing a null pointer
+         * to memcpy which is UB, so we handle it specially.
+         */
+        if (a->count == 0)
+                return new;
+
         new->count = a->count;
         new->capacity = a->count;
         new->items = alloc(sizeof *new->items * new->count);
@@ -531,8 +538,12 @@ void
 value_array_extend(struct value_array *a, struct value_array const *other)
 {
         int n = a->count + other->count;
-        vec_reserve(*a, n);
-        memcpy(a->items + a->count, other->items, other->count * sizeof (struct value));
+
+        if (n != 0)
+                vec_reserve(*a, n);
+        if (other->count != 0)
+                memcpy(a->items + a->count, other->items, other->count * sizeof (struct value));
+
         a->count = n;
 }
 
