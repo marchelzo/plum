@@ -108,6 +108,7 @@ static struct {
         { .module = "buffer", .name = "sendMessage",       .fn = builtin_editor_send_message        },
         { .module = "buffer", .name = "onMessage",         .fn = builtin_editor_on_message          },
         { .module = "buffer", .name = "id",                .fn = builtin_editor_buffer_id           },
+        { .module = "buffer", .name = "new",               .fn = builtin_editor_buffer_new          },
         { .module = "window", .name = "growVertically",    .fn = builtin_editor_grow_vertically     },
         { .module = "window", .name = "growHorizontally",  .fn = builtin_editor_grow_horizontally   },
         { .module = "window", .name = "verticalSplit",     .fn = builtin_editor_vertical_split      },

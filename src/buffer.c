@@ -338,7 +338,7 @@ handle_editor_event(int ev)
         int id;
         int bytes;
         int newlines, newcols;
-        static char msgbuf[256];
+        static char smallbuf[256];
         static char buf[4096];
         static struct value type;
 
@@ -378,8 +378,8 @@ handle_editor_event(int ev)
         case EVT_MESSAGE:
                 id = recvint(read_fd);
                 bytes = recvint(read_fd);
-                read(read_fd, msgbuf, bytes);
-                type = STRING_NOGC(msgbuf, bytes);
+                read(read_fd, smallbuf, bytes);
+                type = STRING_NOGC(smallbuf, bytes);
                 bytes = recvint(read_fd);
                 if (bytes == -1) {
                         state_handle_message(&state, INTEGER(id), type, NIL);
@@ -387,6 +387,13 @@ handle_editor_event(int ev)
                         read(read_fd, buf, bytes);
                         state_handle_message(&state, INTEGER(id), type, STRING_CLONE(buf, bytes));
                 }
+                break;
+        case EVT_RUN_PROGRAM:
+                bytes = recvint(read_fd);
+                read(read_fd, smallbuf, bytes);
+                snprintf(buf, sizeof buf - 1, "import %.*s\n", bytes, smallbuf);
+                /* TODO: maybe check the return value of vm_execute here? */
+                vm_execute(buf);
                 break;
         case EVT_TEXT_INPUT:
                 bytes = recvint(read_fd);
@@ -1099,6 +1106,36 @@ int
 buffer_id(void)
 {
         return bufid;
+}
+
+/*
+ * Try to spawn a new buffer and run the program specified by
+ * 'prog', which is a pointer into an n-byte string.
+ *
+ * Alternatively, n can be -1, and 'prog' will be ignored.
+ *
+ * example: buffer_create("foo::bar", 11);
+ *
+ * will try to spawn a new buffer and in the new buffer, run
+ * the program $HOME/.plum/foo/bar.plum
+ */
+int
+buffer_create(char const *prog, int n)
+{
+        evt_send(write_fd, EVT_NEW_BUFFER);
+
+        sendint(write_fd, n);
+        if (n != -1)
+                write(write_fd, prog, n);
+
+        buffer_event_code ev;
+        for (;;) {
+                ev = evt_recv(read_fd);
+                if (ev == EVT_NEW_BUFFER)
+                        return recvint(read_fd);
+                else
+                        handle_editor_event(ev);
+        }
 }
 
 void

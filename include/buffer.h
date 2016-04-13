@@ -211,6 +211,9 @@ buffer_send_message(int id, char const *type, int tn, char const *msg, int mn);
 int
 buffer_id(void);
 
+int
+buffer_create(char const *prog, int n);
+
 void
 blog(char const *fmt, ...);
 

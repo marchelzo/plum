@@ -159,6 +159,22 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                                 write(buffer->write_fd, buf, bytes);
                 }
                 break;
+        case EVT_NEW_BUFFER:
+                buffer = newbuffer(e);
+
+                evt_send(b->write_fd, EVT_NEW_BUFFER);
+                sendint(b->write_fd, buffer->id);
+
+                bytes = recvint(b->read_fd);
+                if (bytes == -1)
+                        break;
+                else
+                        read(b->read_fd, buf, bytes);
+
+                evt_send(buffer->write_fd, EVT_RUN_PROGRAM);
+                sendint(buffer->write_fd, bytes);
+                write(buffer->write_fd, buf, bytes);
+                break;
         case EVT_VM_ERROR:
                 beep();
         case EVT_LOG_REQUEST:

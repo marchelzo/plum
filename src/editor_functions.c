@@ -768,3 +768,27 @@ builtin_editor_buffer_id(value_vector *args)
         ASSERT_ARGC("buffer::id()", 0);
         return INTEGER(buffer_id());
 }
+
+struct value
+builtin_editor_buffer_new(value_vector *args)
+{
+        if (args->count != 0 && args->count != 1)
+                vm_panic("buffer::new() expects 0 or 1 arguments but got %zu", args->count);
+
+        
+        char const *prog;
+        int n;
+
+        if (args->count == 1) {
+                struct value program = args->items[0];
+                if (program.type != VALUE_STRING)
+                        vm_panic("non-string passed to buffer::new()");
+                prog = program.string;
+                n = program.bytes;
+        } else {
+                prog = NULL;
+                n = -1;
+        }
+
+        return INTEGER(buffer_create(prog, n));
+}
