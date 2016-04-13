@@ -429,6 +429,9 @@ handle_editor_event(int ev)
                         state_push_input(&state, input_buffer);
                         checkinput();
                 }
+                break;
+        default:
+                LOG("ERROR: INVALID EVENT: %d", ev);
         }
 }
 
@@ -1023,9 +1026,10 @@ buffer_show_console(void)
 }
 
 int
-buffer_horizontal_split(void)
+buffer_horizontal_split(int buf)
 {
         evt_send(write_fd, EVT_HSPLIT_REQUEST);
+        sendint(write_fd, buf);
 
         buffer_event_code ev;
         for (;;) {
@@ -1038,9 +1042,10 @@ buffer_horizontal_split(void)
 }
 
 int
-buffer_vertical_split(void)
+buffer_vertical_split(int buf)
 {
         evt_send(write_fd, EVT_VSPLIT_REQUEST);
+        sendint(write_fd, buf);
 
         buffer_event_code ev;
         for (;;) {

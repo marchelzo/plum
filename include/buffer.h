@@ -188,10 +188,10 @@ void
 buffer_show_console(void);
 
 int
-buffer_horizontal_split(void);
+buffer_horizontal_split(int);
 
 int
-buffer_vertical_split(void);
+buffer_vertical_split(int);
 
 int
 buffer_current_window(void);

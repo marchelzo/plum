@@ -10,6 +10,11 @@
                 vm_panic(func " expects " #argc " argument(s) but got %zu", args->count); \
         }
 
+#define ASSERT_ARGC_2(func, argc1, argc2) \
+        if (args->count != (argc1) && args->count != (argc2)) { \
+                vm_panic(func " expects " #argc1 " or " #argc2 " argument(s) but got %zu", args->count); \
+        }
+
 struct value
 builtin_editor_insert(value_vector *args)
 {
@@ -134,9 +139,7 @@ builtin_editor_grow_horizontally(value_vector *args)
 struct value
 builtin_editor_next_line(value_vector *args)
 {
-        if (args->count != 0 && args->count != 1) {
-                vm_panic("buffer::nextLine() expects 0 or 1 arguments but got %zu", args->count);
-        }
+        ASSERT_ARGC_2("buffer::nextLine()", 0, 1);
 
         if (args->count == 0) {
                 return INTEGER(buffer_next_line(1));
@@ -154,9 +157,7 @@ builtin_editor_next_line(value_vector *args)
 struct value
 builtin_editor_prev_line(value_vector *args)
 {
-        if (args->count != 0 && args->count != 1) {
-                vm_panic("buffer::prevLine() expects 0 or 1 arguments but got %zu", args->count);
-        }
+        ASSERT_ARGC_2("buffer::prevLine()", 0, 1);
 
         if (args->count == 0) {
                 return INTEGER(buffer_prev_line(1));
@@ -174,9 +175,7 @@ builtin_editor_prev_line(value_vector *args)
 struct value
 builtin_editor_scroll_up(value_vector *args)
 {
-        if (args->count != 0 && args->count != 1) {
-                vm_panic("buffer::scrollUp() expects 0 or 1 arguments but got %zu", args->count);
-        }
+        ASSERT_ARGC_2("buffer::scrollUp()", 0, 1);
 
         if (args->count == 0) {
                 return INTEGER(buffer_scroll_up(1));
@@ -194,9 +193,7 @@ builtin_editor_scroll_up(value_vector *args)
 struct value
 builtin_editor_scroll_down(value_vector *args)
 {
-        if (args->count != 0 && args->count != 1) {
-                vm_panic("buffer::scrollDown() expects 0 or 1 arguments but got %zu", args->count);
-        }
+        ASSERT_ARGC_2("buffer::scrollDown()", 0, 1);
 
         if (args->count == 0) {
                 return INTEGER(buffer_scroll_down(1));
@@ -214,9 +211,7 @@ builtin_editor_scroll_down(value_vector *args)
 struct value
 builtin_editor_move_right(value_vector *args)
 {
-        if (args->count != 0 && args->count != 1) {
-                vm_panic("buffer::moveRight() expects 0 or 1 arguments but got %zu", args->count);
-        }
+        ASSERT_ARGC_2("buffer::moveRight()", 0, 1);
 
         if (args->count == 0) {
                 return INTEGER(buffer_right(1));
@@ -234,9 +229,7 @@ builtin_editor_move_right(value_vector *args)
 struct value
 builtin_editor_move_left(value_vector *args)
 {
-        if (args->count != 0 && args->count != 1) {
-                vm_panic("buffer::moveLeft() expects 0 or 1 arguments but got %zu", args->count);
-        }
+        ASSERT_ARGC_2("buffer::moveLeft()", 0, 1);
 
         if (args->count == 0) {
                 return INTEGER(buffer_left(1));
@@ -395,9 +388,7 @@ builtin_editor_goto_end(value_vector *args)
 struct value
 builtin_editor_get_char(value_vector *args)
 {
-        if (args->count != 0 && args->count != 1) {
-                vm_panic("buffer::getChar() expects 0 or 1 arguments but got %zu", args->count);
-        }
+        ASSERT_ARGC_2("buffer::getChar()", 0, 1);
 
         int i;
         if (args->count == 0) {
@@ -419,9 +410,7 @@ builtin_editor_get_char(value_vector *args)
 struct value
 builtin_editor_get_line(value_vector *args)
 {
-        if (args->count != 0 && args->count != 1) {
-                vm_panic("buffer::getLine() expects 0 or 1 arguments but got %zu", args->count);
-        }
+        ASSERT_ARGC_2("buffer::getLine()", 0, 1);
 
         int i;
         if (args->count == 0) {
@@ -630,14 +619,13 @@ builtin_editor_proc_write_line(value_vector *args)
 struct value
 builtin_editor_write_file(value_vector *args)
 {
+        ASSERT_ARGC_2("buffer::writeFile()", 0, 1);
+
         if (args->count == 0) {
                 if (!buffer_save_file())
                         blog("There is no file associated with this buffer");
                 return NIL;
         }
-
-        if (args->count != 1)
-                vm_panic("buffer::writeFile() expects 0 or 1 arguments but got %zu", args->count);
 
         struct value filename = args->items[0];
 
@@ -672,15 +660,32 @@ builtin_editor_show_console(value_vector *args)
 struct value
 builtin_editor_horizontal_split(value_vector *args)
 {
-        ASSERT_ARGC("window::horizontalSplit()", 0);
-        return INTEGER(buffer_horizontal_split());
+        ASSERT_ARGC_2("window::horizontalSplit()", 0, 1);
+
+        if (args->count == 0)
+                return INTEGER(buffer_horizontal_split(-1));
+
+        struct value buffer = args->items[0];
+        if (buffer.type != VALUE_INTEGER)
+                vm_panic("non-integer passed to window::horizontalSplit()");
+
+        return INTEGER(buffer_horizontal_split(buffer.integer));
+
 }
 
 struct value
 builtin_editor_vertical_split(value_vector *args)
 {
-        ASSERT_ARGC("window::verticalSplit()", 0);
-        return INTEGER(buffer_vertical_split());
+        ASSERT_ARGC_2("window::verticalSplit()", 0, 1);
+
+        if (args->count == 0)
+                return INTEGER(buffer_vertical_split(-1));
+
+        struct value buffer = args->items[0];
+        if (buffer.type != VALUE_INTEGER)
+                vm_panic("non-integer passed to window::verticalSplit()");
+
+        return INTEGER(buffer_vertical_split(buffer.integer));
 }
 
 struct value
@@ -693,13 +698,12 @@ builtin_editor_current_window(value_vector *args)
 struct value
 builtin_editor_delete_window(value_vector *args)
 {
+        ASSERT_ARGC_2("window::delete()", 0, 1);
+
         if (args->count == 0) {
                 buffer_delete_current_window();
                 return NIL;
         }
-
-        if (args->count != 1)
-                vm_panic("window::delete() expects 0 or 1 arguments but got %zu", args->count);
 
         struct value id = args->items[0];
 
@@ -733,8 +737,7 @@ builtin_editor_on_message(value_vector *args)
 struct value
 builtin_editor_send_message(value_vector *args)
 {
-        if (args->count != 2 && args->count != 3)
-                vm_panic("buffer::sendMessage() expects 2 or 3 arguments but got %zu", args->count);
+        ASSERT_ARGC_2("buffer::sendMessage()", 2, 3);
 
         struct value id = args->items[0];
         if (id.type != VALUE_INTEGER)
@@ -772,9 +775,7 @@ builtin_editor_buffer_id(value_vector *args)
 struct value
 builtin_editor_buffer_new(value_vector *args)
 {
-        if (args->count != 0 && args->count != 1)
-                vm_panic("buffer::new() expects 0 or 1 arguments but got %zu", args->count);
-
+        ASSERT_ARGC_2("buffer::new()", 0, 1);
         
         char const *prog;
         int n;

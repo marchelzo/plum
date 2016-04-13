@@ -225,7 +225,6 @@ window_set_width(struct window *w, int width)
         window_grow_x(w, width - w->width);
 }
 
-
 void
 window_vsplit(struct window *w, struct buffer *buffer)
 {

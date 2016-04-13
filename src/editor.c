@@ -81,6 +81,8 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
         static int amount;
         static int id;
 
+        void (*split)(struct window *, struct buffer *) = NULL;
+
         switch (c) {
         case EVT_GROW_X_REQUEST:
                 amount = recvint(b->read_fd);
@@ -101,19 +103,24 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                 }
                 break;
         case EVT_HSPLIT_REQUEST:
-                if (b->window != NULL) {
-                        window_hsplit(b->window, newbuffer(e));
-                        e->current_window = b->window;
-                        evt_send(b->write_fd, EVT_WINDOW_ID);
-                        sendint(b->write_fd, WINDOW_SIBLING(b->window)->id);
-                }
-                break;
+                split = window_hsplit;
         case EVT_VSPLIT_REQUEST:
+                if (split == NULL)
+                        split = window_vsplit;
+                        split = window_vsplit;
                 if (b->window != NULL) {
-                        window_vsplit(b->window, newbuffer(e));
-                        e->current_window = b->window;
-                        evt_send(b->write_fd, EVT_WINDOW_ID);
-                        sendint(b->write_fd, WINDOW_SIBLING(b->window)->id);
+                        id = recvint(b->read_fd);
+                        buffer = (id == -1) ? newbuffer(e) : findbuffer(e, id);
+
+                        if (buffer == NULL) {
+                                evt_send(b->write_fd, EVT_WINDOW_ID);
+                                sendint(b->write_fd, -1);
+                        } else {
+                                split(b->window, buffer);
+                                e->current_window = b->window;
+                                evt_send(b->write_fd, EVT_WINDOW_ID);
+                                sendint(b->write_fd, WINDOW_SIBLING(b->window)->id);
+                        }
                 }
                 break;
         case EVT_WINDOW_ID:
