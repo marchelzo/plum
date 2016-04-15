@@ -24,4 +24,7 @@ sp_kill(int fd);
 void
 sp_close(int fd);
 
+void
+sp_wait(int fd);
+
 #endif

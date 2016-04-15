@@ -6,6 +6,7 @@
 #include <errno.h>
 
 #include "panic.h"
+#include "log.h"
 
 #define buffer_event_code char
 

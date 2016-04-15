@@ -124,6 +124,7 @@ static struct {
         { .module = "proc",   .name = "writeLine",         .fn = builtin_editor_proc_write_line     },
         { .module = "proc",   .name = "close",             .fn = builtin_editor_proc_close          },
         { .module = "proc",   .name = "kill",              .fn = builtin_editor_proc_kill           },
+        { .module = "proc",   .name = "wait",              .fn = builtin_editor_proc_wait           },
 };
 
 static int builtin_count = sizeof builtins / sizeof builtins[0];

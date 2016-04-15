@@ -173,6 +173,9 @@ bool
 buffer_close_subprocess(int fd);
 
 bool
+buffer_wait_subprocess(int fd);
+
+bool
 buffer_write_to_subprocess(int fd, char const *data, int n);
 
 bool

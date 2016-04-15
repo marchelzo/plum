@@ -588,6 +588,19 @@ builtin_editor_proc_close(value_vector *args)
 }
 
 struct value
+builtin_editor_proc_wait(value_vector *args)
+{
+        ASSERT_ARGC("proc::wait()", 1);
+
+        struct value proc = args->items[0];
+
+        if (proc.type != VALUE_INTEGER)
+                vm_panic("non-integer passed to proc::wait()");
+
+        return BOOLEAN(buffer_wait_subprocess(proc.integer));
+}
+
+struct value
 builtin_editor_proc_write(value_vector *args)
 {
         ASSERT_ARGC("proc::write()", 2);

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <assert.h>
 
 #include <signal.h>
 #include <fcntl.h>
@@ -10,6 +11,7 @@
 #include "alloc.h"
 #include "value.h"
 #include "subprocess.h"
+#include "buffer.h"
 #include "log.h"
 #include "vm.h"
 
@@ -187,4 +189,19 @@ sp_close(int fd)
 {
         if (infind(fd) != -1)
                 close(fd);
+}
+
+void
+sp_wait(int fd)
+{
+        char buffer[1024];
+        int n;
+
+        int i = infind(fd);
+        assert(i != -1);
+
+        int in = jobs.items[i].output;
+
+        while ((n = read(in, buffer, sizeof buffer)) > 0)
+                sp_on_output(in, buffer, n);
 }

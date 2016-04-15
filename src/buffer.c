@@ -949,6 +949,17 @@ buffer_kill_subprocess(int fd)
         return true;
 }
 
+bool
+buffer_wait_subprocess(int fd)
+{
+        if (!sp_fdvalid(fd))
+                return false;
+
+        sp_wait(fd);
+
+        return true;
+}
+
 /*
  * Just closes our end of the pipe.
  */
@@ -972,8 +983,6 @@ buffer_write_to_subprocess(int fd, char const *data, int n)
         /* maybe this should be done in subprocess.c just for the sake of encapsulation */
         if (write(fd, data, n) == -1)
                 return false;
-
-        LOG("wrote %d bytes to subprocess", n);
 
         return true;
 }

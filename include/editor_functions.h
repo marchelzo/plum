@@ -124,6 +124,9 @@ struct value
 builtin_editor_proc_close(value_vector *args);
 
 struct value
+builtin_editor_proc_wait(value_vector *args);
+
+struct value
 builtin_editor_proc_write(value_vector *args);
 
 struct value
