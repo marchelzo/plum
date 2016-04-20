@@ -19,6 +19,10 @@ TEST_FILTER ?= "."
 
 BINARIES = plum repl interpreter
 
+ifdef NOLOG
+        CFLAGS += -DPLUM_NO_LOG
+endif
+
 ifndef RELEASE
         CFLAGS += -fsanitize=undefined
         CFLAGS += -fsanitize=leak
@@ -26,6 +30,7 @@ ifndef RELEASE
 else
         CFLAGS += -Ofast
         CFLAGS += -DPLUM_RELEASE
+        CFLAGS += -DPLUM_NO_LOG
 endif
 
 ifdef GENPROF

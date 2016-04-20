@@ -19,6 +19,7 @@
 #include "panic.h"
 #include "alloc.h"
 #include "utf8.h"
+#include "vm.h"
 
 #define RIGHT(s) ((s)->right + (s)->capacity - (s)->rightcount)
 #define CURRENT_EDIT(s) (&(s)->edits.items[(s)->edits.count - 1])
@@ -999,6 +1000,51 @@ tb_find_prev(struct tb *s, char const *c, int n)
 
 	return true;
 
+}
+
+void
+tb_each_line(struct tb const *s, struct value *f)
+{
+        f->refs->mark |= GC_HARD;
+
+        int ln = 0;
+        char const *l = s->left;
+        char const *end = s->left + s->leftcount;
+
+        for (char const *start = l; l != end; ++l) {
+                if (*l != '\n') 
+                        continue;
+
+                struct value line = STRING_CLONE(start, l - start);
+                vm_eval_function2(f, &line, &INTEGER(ln));
+
+                ++ln;
+                start = l + 1;
+        }
+
+        struct value current = tb_get_line(s, s->line);
+        vm_eval_function2(f, &current, &INTEGER(ln));
+
+        ++ln;
+
+        char const *r = RIGHT(s);
+        end = r + s->rightcount;
+        char const *start;
+        for (start = r; r != end; ++r) {
+                if (*r != '\n') 
+                        continue;
+
+                struct value line = STRING_CLONE(start, r - start);
+                vm_eval_function2(f, &line, &INTEGER(ln));
+
+                ++ln;
+                start = r + 1;
+        }
+
+        struct value line = STRING_CLONE(start, r - start);
+        vm_eval_function2(f, &line, &INTEGER(ln));
+
+        f->refs->mark &= ~GC_HARD;
 }
 
 struct value

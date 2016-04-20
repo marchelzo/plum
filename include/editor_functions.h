@@ -174,4 +174,7 @@ builtin_editor_buffer_id(value_vector *args);
 struct value
 builtin_editor_buffer_new(value_vector *args);
 
+struct value
+builtin_editor_buffer_each_line(value_vector *args);
+
 #endif

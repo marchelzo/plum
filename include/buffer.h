@@ -139,6 +139,9 @@ buffer_get_char(int i);
 struct value
 buffer_get_line(int i);
 
+void
+buffer_each_line(struct value *f);
+
 struct value
 buffer_save_excursion(struct value *f);
 

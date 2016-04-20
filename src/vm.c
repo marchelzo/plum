@@ -109,6 +109,7 @@ static struct {
         { .module = "buffer", .name = "onMessage",         .fn = builtin_editor_on_message          },
         { .module = "buffer", .name = "id",                .fn = builtin_editor_buffer_id           },
         { .module = "buffer", .name = "new",               .fn = builtin_editor_buffer_new          },
+        { .module = "buffer", .name = "eachLine",          .fn = builtin_editor_buffer_each_line    },
         { .module = "window", .name = "height",            .fn = builtin_editor_window_height       },
         { .module = "window", .name = "width",             .fn = builtin_editor_window_width        },
         { .module = "window", .name = "growVertically",    .fn = builtin_editor_grow_vertically     },
@@ -136,7 +137,7 @@ static struct variable *
 newvar(struct variable *next)
 {
         struct variable *v = alloc(sizeof *v);
-        v->mark = true;
+        v->mark = GC_MARK;
         v->captured = false;
         v->prev = NULL;
         v->next = next;
@@ -1088,24 +1089,24 @@ vm_mark(void)
 void
 vm_mark_variable(struct variable *v)
 {
-        v->mark = true;
+        v->mark |= GC_MARK;
         value_mark(&v->value);
 }
 
 void
 vm_sweep_variables(void)
 {
-        while (captured_chain != NULL && !captured_chain->mark) {
+        while (captured_chain != NULL && captured_chain->mark == GC_NONE) {
                 struct variable *next = captured_chain->next;
                 free(captured_chain);
                 captured_chain = next;
         }
         if (captured_chain != NULL) {
-                captured_chain->mark = false;
+                captured_chain->mark &= ~GC_MARK;
         }
         for (struct variable *var = captured_chain; var != NULL && var->next != NULL;) {
                 struct variable *next;
-                if (!var->next->mark) {
+                if (var->next->mark == GC_NONE) {
                         next = var->next->next;
                         free(var->next);
                         var->next = next;
@@ -1113,7 +1114,7 @@ vm_sweep_variables(void)
                         next = var->next;
                 }
                 if (next != NULL) {
-                        next->mark = false;
+                        next->mark &= ~GC_NONE;
                 }
                 var = next;
         }

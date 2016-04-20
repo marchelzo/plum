@@ -170,4 +170,7 @@ tb_find_next(struct tb *s, char const *c, int n);
 bool
 tb_find_prev(struct tb *s, char const *c, int n);
 
+void
+tb_each_line(struct tb const *s, struct value *f);
+
 #endif

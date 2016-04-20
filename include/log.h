@@ -5,7 +5,7 @@
 #include <sys/file.h>
 #include <stdio.h>
 
-#ifndef PLUM_RELEASE
+#ifndef PLUM_NO_LOG
 #define LOG(...) ( \
                         flock(2, LOCK_EX), \
                         fprintf(stderr, "(%d) ", getpid()), \

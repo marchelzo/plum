@@ -862,7 +862,7 @@ buffer_mark_values(void)
 struct value
 buffer_get_char(int i)
 {
-        if (i == -1) // -1 means current char. this is ugly.
+        if (i == -1)
                 return tb_get_char(&data, data.character);
         else
                 return tb_get_char(&data, i);
@@ -871,10 +871,16 @@ buffer_get_char(int i)
 struct value
 buffer_get_line(int i)
 {
-        if (i == -1) // -1 means current char. this is ugly.
+        if (i == -1)
                 return tb_get_line(&data, data.line);
         else
                 return tb_get_line(&data, i);
+}
+
+void
+buffer_each_line(struct value *f)
+{
+        tb_each_line(&data, f);
 }
 
 int

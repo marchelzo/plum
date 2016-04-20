@@ -865,3 +865,18 @@ builtin_editor_buffer_new(value_vector *args)
 
         return INTEGER(buffer_create(prog, n));
 }
+
+struct value
+builtin_editor_buffer_each_line(value_vector *args)
+{
+        ASSERT_ARGC("buffer::eachLine()", 1);
+
+        struct value f = args->items[0];
+
+        if (f.type != VALUE_FUNCTION && f.type != VALUE_BUILTIN_FUNCTION)
+                vm_panic("non-function passed to buffer::eachLine()");
+
+        buffer_each_line(&f);
+
+        return NIL;
+}

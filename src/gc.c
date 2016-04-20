@@ -6,7 +6,8 @@
 #include "log.h"
 
 enum {
-        GC_ALLOC_THRESHOLD = (1 << 22) // ~ 4 MB
+        //GC_ALLOC_THRESHOLD = (1 << 22) // ~ 4 MB
+        GC_ALLOC_THRESHOLD = 1 << 14
 };
 
 static size_t allocated = 0;

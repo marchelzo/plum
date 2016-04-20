@@ -33,12 +33,12 @@ struct value_array {
         size_t count;
         size_t capacity;
 
-        bool mark;
+        unsigned char mark;
         struct value_array *next;
 };
 
 struct string {
-        bool mark;
+        unsigned char mark;
         struct string *next;
         char data[];
 };
@@ -52,7 +52,7 @@ struct reference {
 };
 
 struct ref_vector {
-        bool mark;
+        unsigned char mark;
         size_t count;
         struct ref_vector *next;
         struct reference refs[];

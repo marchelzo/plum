@@ -24,7 +24,7 @@ struct object {
         struct object_hashmap_node *buckets[OBJECT_NUM_BUCKETS];
         size_t count;
 
-        bool mark;
+        unsigned char mark;
         struct object *next;
 };
 
@@ -91,7 +91,7 @@ object_new(void)
         }
 
         object->count = 0;
-        object->mark = true;
+        object->mark = GC_MARK;
         object->next = object_chain;
         object_chain = object;
 
@@ -173,12 +173,10 @@ object_keys_array(struct object *obj)
 void
 object_mark(struct object *obj)
 {
-        obj->mark = true;
+        obj->mark |= GC_MARK;
 
         for (int i = 0; i < OBJECT_NUM_BUCKETS; ++i) {
                 for (struct object_hashmap_node *node = obj->buckets[i]; node != NULL; node = node->next) {
-                        LOG("MARKING KEY-VALUE PAIR");
-                        LOG("(%s, %s)", value_show(&node->key), value_show(&node->value));
                         value_mark(&node->key);
                         value_mark(&node->value);
                 }
@@ -188,17 +186,17 @@ object_mark(struct object *obj)
 void
 object_sweep(void)
 {
-        while (object_chain != NULL && !object_chain->mark) {
+        while (object_chain != NULL && object_chain->mark == GC_NONE) {
                 struct object *next = object_chain->next;
                 freeobj(object_chain);
                 object_chain = next;
         }
         if (object_chain != NULL) {
-                object_chain->mark = false;
+                object_chain->mark &= ~GC_MARK;
         }
         for (struct object *obj = object_chain; obj != NULL && obj->next != NULL;) {
                 struct object *next;
-                if (!obj->next->mark) {
+                if (obj->next->mark == GC_NONE) {
                         next = obj->next->next;
                         freeobj(obj->next);
                         obj->next = next;
@@ -206,7 +204,7 @@ object_sweep(void)
                         next = obj->next;
                 }
                 if (next != NULL) {
-                        next->mark = false;
+                        next->mark &= ~GC_MARK;
                 }
                 obj = next;
         }

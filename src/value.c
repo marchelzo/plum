@@ -448,7 +448,7 @@ value_test_equality(struct value const *v1, struct value const *v2)
 inline static void
 value_array_mark(struct value_array *a)
 {
-        a->mark = true;
+        a->mark |= GC_MARK;
 
         for (int i = 0; i < a->count; ++i) {
                 value_mark(&a->items[i]);
@@ -462,14 +462,14 @@ function_mark_references(struct value *v)
                 vm_mark_variable((struct variable *)v->refs->refs[i].pointer);
         }
 
-        v->refs->mark = true;
+        v->refs->mark |= GC_MARK;
 }
 
 struct string *
 value_clone_string(char const *s, int n)
 {
         struct string *str = gc_alloc(sizeof *str + n);
-        str->mark = true;
+        str->mark = GC_MARK;
         str->next = string_chain;
         string_chain = str;
 
@@ -482,7 +482,7 @@ struct string *
 value_string_alloc(int n)
 {
         struct string *str = gc_alloc(sizeof *str + n);
-        str->mark = true;
+        str->mark = GC_MARK;
         str->next = string_chain;
         string_chain = str;
 
@@ -493,11 +493,11 @@ void
 value_mark(struct value *v)
 {
         switch (v->type) {
-        case VALUE_ARRAY:    value_array_mark(v->array);                  break;
-        case VALUE_OBJECT:   object_mark(v->object);                      break;
-        case VALUE_FUNCTION: function_mark_references(v);                 break;
-        case VALUE_STRING:   if (v->gcstr != NULL) v->gcstr->mark = true; break;
-        default:                                                          break;
+        case VALUE_ARRAY:    value_array_mark(v->array);                      break;
+        case VALUE_OBJECT:   object_mark(v->object);                          break;
+        case VALUE_FUNCTION: function_mark_references(v);                     break;
+        case VALUE_STRING:   if (v->gcstr != NULL) v->gcstr->mark |= GC_MARK; break;
+        default:                                                              break;
         }
 }
 
@@ -506,7 +506,7 @@ value_array_new(void)
 {
         struct value_array *a = gc_alloc(sizeof *a);
         a->next = array_chain;
-        a->mark = true;
+        a->mark = GC_MARK;
         array_chain = a;
 
         vec_init(*a);
@@ -552,7 +552,7 @@ ref_vector_new(int n)
 {
         struct ref_vector *v = gc_alloc(sizeof *v + sizeof (struct reference) * n);
         v->count = n;
-        v->mark = true;
+        v->mark = GC_MARK;
         v->next = ref_vector_chain;
         ref_vector_chain = v;
 
@@ -562,29 +562,27 @@ ref_vector_new(int n)
 void
 value_array_sweep(void)
 {
-        while (array_chain != NULL && !array_chain->mark) {
+        while (array_chain != NULL && array_chain->mark == GC_NONE) {
                 struct value_array *next = array_chain->next;
                 vec_empty(*array_chain);
-                LOG("FREEING ARRAY");
                 free(array_chain);
                 array_chain = next;
         }
         if (array_chain != NULL) {
-                array_chain->mark = false;
+                array_chain->mark &= ~GC_MARK;
         }
         for (struct value_array *array = array_chain; array != NULL && array->next != NULL;) {
                 struct value_array *next;
-                if (!array->next->mark) {
+                if (array->next->mark == GC_NONE) {
                         next = array->next->next;
                         vec_empty(*array->next);
-                        LOG("FREEING ARRAY");
                         free(array->next);
                         array->next = next;
                 } else {
                         next = array->next;
                 }
                 if (next != NULL) {
-                        next->mark = false;
+                        next->mark &= ~GC_MARK;
                 }
                 array = next;
         }
@@ -593,26 +591,25 @@ value_array_sweep(void)
 void
 value_string_sweep(void)
 {
-        while (string_chain != NULL && !string_chain->mark) {
+        while (string_chain != NULL && string_chain->mark == GC_NONE) {
                 struct string *next = string_chain->next;
                 free(string_chain);
                 string_chain = next;
         }
         if (string_chain != NULL) {
-                string_chain->mark = false;
+                string_chain->mark &= ~GC_MARK;
         }
         for (struct string *str = string_chain; str != NULL && str->next != NULL;) {
                 struct string *next;
-                if (!str->next->mark) {
+                if (str->next->mark == GC_NONE) {
                         next = str->next->next;
-                        LOG("freeing a string!");
                         free(str->next);
                         str->next = next;
                 } else {
                         next = str->next;
                 }
                 if (next != NULL) {
-                        next->mark = false;
+                        next->mark &= ~GC_MARK;
                 }
                 str = next;
         }
@@ -620,17 +617,17 @@ value_string_sweep(void)
 void
 value_ref_vector_sweep(void)
 {
-        while (ref_vector_chain != NULL && !ref_vector_chain->mark) {
+        while (ref_vector_chain != NULL && ref_vector_chain->mark == GC_NONE) {
                 struct ref_vector *next = ref_vector_chain->next;
                 free(ref_vector_chain);
                 ref_vector_chain = next;
         }
         if (ref_vector_chain != NULL) {
-                ref_vector_chain->mark = false;
+                ref_vector_chain->mark &= ~GC_MARK;
         }
         for (struct ref_vector *ref_vector = ref_vector_chain; ref_vector != NULL && ref_vector->next != NULL;) {
                 struct ref_vector *next;
-                if (!ref_vector->next->mark) {
+                if (ref_vector->next->mark == GC_NONE) {
                         next = ref_vector->next->next;
                         free(ref_vector->next);
                         ref_vector->next = next;
@@ -638,7 +635,7 @@ value_ref_vector_sweep(void)
                         next = ref_vector->next;
                 }
                 if (next != NULL) {
-                        next->mark = false;
+                        next->mark &= ~GC_MARK;
                 }
                 ref_vector = next;
         }
