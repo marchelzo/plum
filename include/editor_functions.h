@@ -55,6 +55,9 @@ struct value
 builtin_editor_next_window(value_vector *args);
 
 struct value
+builtin_editor_goto_window(value_vector *args);
+
+struct value
 builtin_editor_map_normal(value_vector *args);
 
 struct value
@@ -146,6 +149,12 @@ builtin_editor_horizontal_split(value_vector *args);
 
 struct value
 builtin_editor_vertical_split(value_vector *args);
+
+struct value
+builtin_editor_window_height(value_vector *args);
+
+struct value
+builtin_editor_window_width(value_vector *args);
 
 struct value
 builtin_editor_current_window(value_vector *args);

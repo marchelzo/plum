@@ -55,19 +55,15 @@ markall(struct input_state *s)
 inline static struct input_state *
 findnext(struct input_state *s, char const *key, int bytes)
 {
-        LOG("Looking for: %s", key);
         int n = s->transitions.count;
         for (int i = 0; i < n; ++i) {
                 struct input_transition *t = &s->transitions.items[i];
-                LOG("Comparing against: %s", t->key);
                 int klen = strlen(t->key);
                 if (klen == bytes && strncmp(key, t->key, bytes) == 0) {
-                        LOG("Found it!");
                         return t->s;
                 }
         }
 
-        LOG("Could't find it!");
         return NULL;
 }
 

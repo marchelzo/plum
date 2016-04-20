@@ -85,7 +85,7 @@ int main(void)
         editor_view_buffer(&e, e.current_window, b1);
 
         for (;;) {
-                render(&e, term);
+                render(&e);
                 tickit_term_input_wait_msec(term, 10);
                 editor_do_update(&e);
         }

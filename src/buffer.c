@@ -262,29 +262,6 @@ adjust_scroll(void)
         }
 }
 
-inline static char *
-renderstatus(char *dst)
-{
-        char *status_size = dst;
-        dst += sizeof (int);
-
-        int n = sprintf(
-                dst,
-                " %-*s%d,%d",
-                cols - 20,
-                file.path == NULL ? "[No Name]" : file.path,
-                tb_line(&data) + 1,
-                tb_column(&data) + 1
-        );
-
-        n += sprintf(dst + n, "%*s", cols - n, " ");
-
-        memcpy(status_size, &n, sizeof (int));
-        dst += n;
-
-        return dst;
-}
-
 /*
  * Write all of the data necessary to display the contents of this buffer into the shared memory, so
  * that the parent process can read it and update the display.
@@ -307,8 +284,6 @@ render(void)
         char *dst = rb_current();
 
         struct location screenloc = screenlocation();
-
-        dst = renderstatus(dst);
 
         dst = writeint(dst, screenloc.line);
         dst = writeint(dst, screenloc.col);
@@ -359,7 +334,7 @@ handle_editor_event(int ev)
 
                 break;
         }
-        case EVT_LOG_REQUEST:
+        case EVT_LOG:
                 /*
                  * This event will only ever be received in the console buffer (for now).
                  */
@@ -374,6 +349,9 @@ handle_editor_event(int ev)
                 newlines = recvint(read_fd);
                 newcols = recvint(read_fd);
                 updatedimensions(newlines, newcols);
+                break;
+        case EVT_BACKGROUNDED:
+                backgrounded = true;
                 break;
         case EVT_MESSAGE:
                 id = recvint(read_fd);
@@ -406,8 +384,6 @@ handle_editor_event(int ev)
                 bytes = recvint(read_fd);
                 read(read_fd, input_buffer, bytes);
                 input_buffer[bytes] = '\0';
-
-                LOG("KEY = '%s'", input_buffer);
 
                 if (strcmp(input_buffer, "C-j") == 0) {
                         char *line = buffer_current_line();
@@ -617,7 +593,6 @@ buffer_new(unsigned id)
                  */
                 fcntl(c2p[0], F_SETFL, O_NONBLOCK);
 
-                LOG("RETURNING BUFFER WITH ID %d: rb_idx = %d", (int) id, (int) *rb_idx);
                 return (struct buffer) {
                         .id  = id,
                         .pid = pid,
@@ -745,15 +720,33 @@ buffer_lines(void)
 void
 buffer_grow_x(int amount)
 {
-        evt_send(write_fd, EVT_GROW_X_REQUEST);
+        evt_send(write_fd, EVT_GROW_X);
         sendint(write_fd, amount);
 }
 
 void
 buffer_grow_y(int amount)
 {
-        evt_send(write_fd, EVT_GROW_Y_REQUEST);
+        evt_send(write_fd, EVT_GROW_Y);
         sendint(write_fd, amount);
+}
+
+struct value
+buffer_window_height(void)
+{
+        if (backgrounded)
+                return NIL;
+        else
+                return INTEGER(lines);
+}
+
+struct value
+buffer_window_width(void)
+{
+        if (backgrounded)
+                return NIL;
+        else
+                return INTEGER(cols);
 }
 
 int
@@ -797,13 +790,20 @@ buffer_scroll_up(int amount)
 void
 buffer_next_window(void)
 {
-        evt_send(write_fd, EVT_NEXT_WINDOW_REQUEST);
+        evt_send(write_fd, EVT_NEXT_WINDOW);
 }
 
 void
 buffer_prev_window(void)
 {
-        evt_send(write_fd, EVT_PREV_WINDOW_REQUEST);
+        evt_send(write_fd, EVT_PREV_WINDOW);
+}
+
+void
+buffer_goto_window(int id)
+{
+        evt_send(write_fd, EVT_GOTO_WINDOW);
+        sendint(write_fd, id);
 }
 
 void
@@ -887,7 +887,7 @@ void
 buffer_log(char const *s)
 {
         int bytes = strlen(s);
-        evt_send(write_fd, EVT_LOG_REQUEST);
+        evt_send(write_fd, EVT_LOG);
         sendint(write_fd, bytes);
         write(write_fd, s, bytes);
 }
@@ -1031,14 +1031,15 @@ buffer_file_name(void)
 void
 buffer_show_console(void)
 {
-        evt_send(write_fd, EVT_SHOW_CONSOLE_REQUEST);
+        evt_send(write_fd, EVT_SHOW_CONSOLE);
 }
 
 int
-buffer_horizontal_split(int buf)
+buffer_horizontal_split(int buf, int size)
 {
-        evt_send(write_fd, EVT_HSPLIT_REQUEST);
+        evt_send(write_fd, EVT_HSPLIT);
         sendint(write_fd, buf);
+        sendint(write_fd, size);
 
         buffer_event_code ev;
         for (;;) {
@@ -1051,10 +1052,11 @@ buffer_horizontal_split(int buf)
 }
 
 int
-buffer_vertical_split(int buf)
+buffer_vertical_split(int buf, int size)
 {
-        evt_send(write_fd, EVT_VSPLIT_REQUEST);
+        evt_send(write_fd, EVT_VSPLIT);
         sendint(write_fd, buf);
+        sendint(write_fd, size);
 
         buffer_event_code ev;
         for (;;) {
@@ -1084,14 +1086,14 @@ buffer_current_window(void)
 void
 buffer_delete_window(int id)
 {
-        evt_send(write_fd, EVT_WINDOW_DELETE_REQUEST);
+        evt_send(write_fd, EVT_WINDOW_DELETE);
         sendint(write_fd, id);
 }
 
 void
 buffer_delete_current_window(void)
 {
-        evt_send(write_fd, EVT_WINDOW_DELETE_CURRENT_REQUEST);
+        evt_send(write_fd, EVT_WINDOW_DELETE_CURRENT);
 }
 
 void

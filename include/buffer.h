@@ -85,6 +85,9 @@ buffer_next_window(void);
 void
 buffer_prev_window(void);
 
+void
+buffer_goto_window(int id);
+
 int
 buffer_prev_line(int amount);
 
@@ -191,10 +194,16 @@ void
 buffer_show_console(void);
 
 int
-buffer_horizontal_split(int);
+buffer_horizontal_split(int, int);
 
 int
-buffer_vertical_split(int);
+buffer_vertical_split(int, int);
+
+struct value
+buffer_window_height(void);
+
+struct value
+buffer_window_width(void);
 
 int
 buffer_current_window(void);

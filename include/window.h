@@ -17,6 +17,7 @@ struct window {
         bool force_redraw;
         bool insert_mode;
         struct window *parent;
+        WINDOW *window;
         union {
                 struct {
                         struct window *left;
@@ -31,7 +32,6 @@ struct window {
                         struct window *two;
                 };
                 struct {
-                        WINDOW *window;
                         struct buffer *buffer;
                         struct { int x, y; } cursor;
                         unsigned id;
@@ -80,5 +80,8 @@ window_hsplit(struct window *w, struct buffer *b);
 
 void
 window_delete(struct window *w);
+
+struct window *
+window_search(struct window const *w, int id);
 
 #endif

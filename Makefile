@@ -3,12 +3,13 @@ CFLAGS = -std=gnu11
 CFLAGS += -Wall
 CFLAGS += -pedantic
 CFLAGS += -Iinclude
-CFLAGS += -ggdb3
-CFLAGS += -ltickit
+CFLAGS += -isystem/usr/local/include
+CFLAGS += $(shell pcre-config --cflags)
+CFLAGS += $(shell pkg-config tickit --libs)
+CFLAGS += $(shell pcre-config --libs)
 CFLAGS += -lncurses
 CFLAGS += -lpthread
 CFLAGS += -lm
-CFLAGS += $(shell pcre-config --libs)
 CFLAGS += -Wno-switch
 
 CFLAGS += -DINSERT_BEGIN_STRING="\"$(PLUM_INSERT_ENTER)\""
@@ -25,6 +26,22 @@ ifndef RELEASE
 else
         CFLAGS += -Ofast
         CFLAGS += -DPLUM_RELEASE
+endif
+
+ifdef GENPROF
+        CFLAGS += -fprofile-generate
+endif
+
+ifdef USEPROF
+        CFLAGS += -fprofile-use
+endif
+
+ifdef LTO
+        CFLAGS += -flto
+        CFLAGS += -fomit-frame-pointer
+        CFLAGS += -fwhole-program
+else
+        CFLAGS += -ggdb3
 endif
 
 SOURCES := $(wildcard src/*.c)
@@ -45,7 +62,7 @@ repl: $(OBJECTS) repl.c
 	$(CC) $(CFLAGS) -c -o $@ -DFILENAME=$(patsubst src/%.c,%,$<) $<
 
 clean:
-	rm -rf $(BINARIES) src/*.o
+	rm -rf $(BINARIES) *.gcda src/*.o src/*.gcda
 
 .PHONY: test.c
 test.c: $(OBJECTS)

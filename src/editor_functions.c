@@ -4,6 +4,7 @@
 #include "vm.h"
 #include "value.h"
 #include "buffer.h"
+#include "log.h"
 
 #define ASSERT_ARGC(func, argc) \
         if (args->count != (argc)) { \
@@ -13,6 +14,11 @@
 #define ASSERT_ARGC_2(func, argc1, argc2) \
         if (args->count != (argc1) && args->count != (argc2)) { \
                 vm_panic(func " expects " #argc1 " or " #argc2 " argument(s) but got %zu", args->count); \
+        }
+
+#define ASSERT_ARGC_3(func, argc1, argc2, argc3) \
+        if (args->count != (argc1) && args->count != (argc2) && args->count != (argc3)) { \
+                vm_panic(func " expects " #argc1 ", " #argc2 ", or " #argc3 " argument(s) but got %zu", args->count); \
         }
 
 struct value
@@ -247,7 +253,7 @@ builtin_editor_move_left(value_vector *args)
 struct value
 builtin_editor_prev_window(value_vector *args)
 {
-        ASSERT_ARGC("editor::prevWindow()", 0);
+        ASSERT_ARGC("window::prev()", 0);
         buffer_prev_window();
         return NIL;
 }
@@ -255,8 +261,23 @@ builtin_editor_prev_window(value_vector *args)
 struct value
 builtin_editor_next_window(value_vector *args)
 {
-        ASSERT_ARGC("editor::nextWindow()", 0);
+        ASSERT_ARGC("window::next()", 0);
         buffer_next_window();
+        return NIL;
+}
+
+struct value
+builtin_editor_goto_window(value_vector *args)
+{
+        ASSERT_ARGC("window::goto()", 1);
+
+        struct value id = args->items[0];
+
+        if (id.type != VALUE_INTEGER)
+                vm_panic("non-integer passed to window::goto()");
+
+        buffer_goto_window(id.integer);
+
         return NIL;
 }
 
@@ -673,32 +694,70 @@ builtin_editor_show_console(value_vector *args)
 struct value
 builtin_editor_horizontal_split(value_vector *args)
 {
-        ASSERT_ARGC_2("window::horizontalSplit()", 0, 1);
+        ASSERT_ARGC_3("window::horizontalSplit()", 0, 1, 2);
 
         if (args->count == 0)
-                return INTEGER(buffer_horizontal_split(-1));
+                return INTEGER(buffer_horizontal_split(-1, -1));
 
         struct value buffer = args->items[0];
-        if (buffer.type != VALUE_INTEGER)
-                vm_panic("non-integer passed to window::horizontalSplit()");
+        if (buffer.type == VALUE_NIL)
+                buffer = INTEGER(-1);
+        else if (buffer.type != VALUE_INTEGER)
+                vm_panic("non-integer passed as first argument to window::horizontalSplit()");
 
-        return INTEGER(buffer_horizontal_split(buffer.integer));
+        int size;
+        if (args->count == 2) {
+                struct value sz = args->items[1];
+                if (sz.type != VALUE_INTEGER)
+                        vm_panic("non-integer passed as second argument to window::horizontalSplit()");
+                size = sz.integer;
+        } else {
+                size = -1;
+        }
+
+        return INTEGER(buffer_horizontal_split(buffer.integer, size));
 
 }
 
 struct value
 builtin_editor_vertical_split(value_vector *args)
 {
-        ASSERT_ARGC_2("window::verticalSplit()", 0, 1);
+        ASSERT_ARGC_3("window::verticalSplit()", 0, 1, 2);
 
         if (args->count == 0)
-                return INTEGER(buffer_vertical_split(-1));
+                return INTEGER(buffer_vertical_split(-1, -1));
 
         struct value buffer = args->items[0];
-        if (buffer.type != VALUE_INTEGER)
-                vm_panic("non-integer passed to window::verticalSplit()");
+        if (buffer.type == VALUE_NIL)
+                buffer = INTEGER(-1);
+        else if (buffer.type != VALUE_INTEGER)
+                vm_panic("non-integer passed as first argument to window::verticalSplit()");
 
-        return INTEGER(buffer_vertical_split(buffer.integer));
+        int size;
+        if (args->count == 2) {
+                struct value sz = args->items[1];
+                if (sz.type != VALUE_INTEGER)
+                        vm_panic("non-integer passed as second argument to window::verticalSplit()");
+                size = sz.integer;
+        } else {
+                size = -1;
+        }
+
+        return INTEGER(buffer_vertical_split(buffer.integer, size));
+}
+
+struct value
+builtin_editor_window_height(value_vector *args)
+{
+        ASSERT_ARGC("window::height()", 0);
+        return buffer_window_height();
+}
+
+struct value
+builtin_editor_window_width(value_vector *args)
+{
+        ASSERT_ARGC("window::width()", 0);
+        return buffer_window_width();
 }
 
 struct value

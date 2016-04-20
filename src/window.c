@@ -7,11 +7,27 @@
 #include "buffer.h"
 #include "log.h"
 
-#define delwin(w) (wclear(w), wnoutrefresh(w), delwin(w))
-
 static int winid = 0;
 
-static void
+inline static void
+fixline(struct window *w)
+{
+        switch (w->type) {
+        case WINDOW_VSPLIT:
+                wresize(w->window, 1, w->width);
+                mvwin(w->window, w->y + w->top->height, w->x);
+                mvwhline(w->window, 0, 0, ACS_HLINE, w->width);
+                break;
+        case WINDOW_HSPLIT:
+                wresize(w->window, w->height, 1);
+                mvwin(w->window, w->y, w->x + w->left->width);
+                mvwvline(w->window, 0, 0, ACS_VLINE, w->height);
+                break;
+        default: assert(!"fixline called on non-split");
+        }
+}
+
+inline static void
 refreshdimensions(struct window *w)
 {
         switch (w->type) {
@@ -32,7 +48,7 @@ refreshdimensions(struct window *w)
 	w->force_redraw = true;
 }
 
-static void
+inline static void
 reconstruct_curses_window(struct window *w)
 {
         delwin(w->window);
@@ -72,10 +88,15 @@ propagate(struct window *w, int dx, int dy, int dw, int dh)
         }
 }
 
-static void
-freewindow(struct window *w)
+inline static void
+delete(struct window *w)
 {
-        // TODO: free stuff
+        delwin(w->window);
+
+        w->buffer->window = NULL;
+        evt_send(w->buffer->write_fd, EVT_BACKGROUNDED);
+
+        free(w);
 }
 
 
@@ -109,7 +130,7 @@ void
 window_notify_dimensions(struct window const *w)
 {
         evt_send(w->buffer->write_fd, EVT_WINDOW_DIMENSIONS);
-        sendint(w->buffer->write_fd, w->height - 2);
+        sendint(w->buffer->write_fd, w->height);
         sendint(w->buffer->write_fd, w->width);
 }
 
@@ -172,22 +193,27 @@ void
 window_grow_y(struct window *w, int dy)
 {
         assert(w != NULL);
+        assert(w->parent != NULL);
 
-        if (w->parent->type != WINDOW_VSPLIT) {
-                window_grow_y(w->parent, dy);
+        struct window *p = w->parent;
+
+        if (p->type != WINDOW_VSPLIT) {
+                window_grow_y(p, dy);
                 return;
         }
 
-        if (w == w->parent->top) {
+        if (w == p->top) {
                 // we are on top, so we don't need to translate
                 // our side of the .
                 propagate(w, 0, 0, 0, dy);
-                propagate(w->parent->bot, 0, dy, 0, -dy);
+                propagate(p->bot, 0, dy, 0, -dy);
         } else {
                 // here we _do_ need to translate our side
                 propagate(w, 0, -dy, 0, dy);
-                propagate(w->parent->top, 0, 0, 0, -dy);
+                propagate(p->top, 0, 0, 0, -dy);
         }
+
+        mvwin(p->window, p->y + p->top->height, p->x);
 }
 
 void
@@ -196,21 +222,25 @@ window_grow_x(struct window *w, int dx)
         assert(w != NULL);
         assert(w->parent != NULL); // can't grow the root window
 
-        if (w->parent->type != WINDOW_HSPLIT) {
-                window_grow_x(w->parent, dx);
+        struct window *p = w->parent;
+
+        if (p->type != WINDOW_HSPLIT) {
+                window_grow_x(p, dx);
                 return;
         }
 
-        if (w == w->parent->left) {
+        if (w == p->left) {
                 // we are on the left, so we don't need to translate
                 // our side of the .
                 propagate(w, 0, 0, dx, 0);
-                propagate(w->parent->right, dx, 0, -dx, 0);
+                propagate(p->right, dx, 0, -dx, 0);
         } else {
                 // here we _do_ need to translate our side
                 propagate(w, -dx, 0, dx, 0);
-                propagate(w->parent->left, 0, 0, -dx, 0);
+                propagate(p->left, 0, 0, -dx, 0);
         }
+
+        fixline(p);
 }
 
 void
@@ -246,6 +276,9 @@ window_vsplit(struct window *w, struct buffer *buffer)
 
         w->bot->buffer = buffer;
 
+        w->window = newwin(1, w->width, w->y + topheight, w->x);
+        fixline(w);
+
         refreshdimensions(w->top);
         refreshdimensions(w->bot);
 
@@ -274,6 +307,9 @@ window_hsplit(struct window *w, struct buffer *buffer)
 
         w->right->buffer = buffer;
 
+        w->window = newwin(w->height, 1, w->y, w->x + leftwidth);
+        fixline(w);
+
         refreshdimensions(w->left);
         refreshdimensions(w->right);
 
@@ -288,7 +324,7 @@ window_delete(struct window *w)
         struct window *parent = w->parent;
         struct window *sibling = WINDOW_SIBLING(w);
 
-        delwin(w->window);
+        delwin(parent->window);
 
         if (sibling->type == WINDOW_WINDOW) {
                 parent->buffer = sibling->buffer;
@@ -315,12 +351,33 @@ window_delete(struct window *w)
         }
 
         parent->type = sibling->type;
+        parent->force_redraw = true;
 
         refreshdimensions(parent);
-        w->buffer->window = NULL;
 
         free(sibling);
-        freewindow(w);
+        delete(w);
+}
+
+struct window *
+window_search(struct window const *w, int id)
+{
+        if (w == NULL)
+                return NULL;
+
+        struct window *result;
+
+        switch (w->type) {
+        case WINDOW_WINDOW:
+                result = (w->id == id) ? w : NULL;
+                break;
+        case WINDOW_HSPLIT:
+        case WINDOW_VSPLIT:
+                (result = window_search(w->one, id)) || (result = window_search(w->two, id));
+                break;
+        }
+
+        return result;
 }
 
 TEST(create)

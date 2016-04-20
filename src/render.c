@@ -49,16 +49,6 @@ render_window(struct window *w)
 
         char const *src = getdata(b);
 
-        src = readint(src, &bytes);
-
-        wattron(w->window, A_BOLD);
-        wbkgdset(w->window, A_REVERSE);
-        mvwaddnstr(w->window, w->height - 2, 0, src, bytes);
-        wattroff(w->window, A_BOLD);
-        wbkgdset(w->window, A_NORMAL);
-
-        src += bytes;
-
         src = readint(src, &w->cursor.y);
         src = readint(src, &w->cursor.x);
         w->insert_mode = *src++;
@@ -69,8 +59,6 @@ render_window(struct window *w)
                 mvwaddnstr(w->window, line, 0, src, bytes);
                 src += bytes;
         }
-
-        wnoutrefresh(w->window);
 
         *b->rb_changed = false;
 
@@ -88,17 +76,18 @@ draw(struct window *w)
         case WINDOW_VSPLIT:
                 changed |= draw(w->top);
                 changed |= draw(w->bot);
-                mvhline(w->bot->y - 1, w->x, ACS_HLINE, w->width);
                 break;
         case WINDOW_HSPLIT:
                 changed |= draw(w->left);
                 changed |= draw(w->right);
-                mvvline(w->y, w->right->x - 1, ACS_VLINE, w->height);
                 break;
         case WINDOW_WINDOW: 
                 changed = render_window(w);
                 break;
         }
+
+        if (changed)
+                wnoutrefresh(w->window);
 
         w->force_redraw = false;
 
@@ -113,9 +102,10 @@ render(struct editor *e)
         if (!draw(e->root_window))
                 return;
         
-        int y = e->current_window->y + e->current_window->cursor.y;
-        int x = e->current_window->x + e->current_window->cursor.x;
-        move(y, x);
+        int y = e->current_window->cursor.y;
+        int x = e->current_window->cursor.x;
+        wmove(e->current_window->window, y, x);
+        wnoutrefresh(e->current_window->window);
 
         if (insert_mode != e->current_window->insert_mode) {
                 if (e->current_window->insert_mode)
@@ -126,6 +116,5 @@ render(struct editor *e)
 
         insert_mode = e->current_window->insert_mode;
 
-        wnoutrefresh(stdscr);
         doupdate();
 }

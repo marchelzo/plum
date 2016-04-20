@@ -80,35 +80,45 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
         static int bytes, msgbytes;
         static int amount;
         static int id;
+        static int size;
 
         void (*split)(struct window *, struct buffer *) = NULL;
 
         switch (c) {
-        case EVT_GROW_X_REQUEST:
+        case EVT_GROW_X:
                 amount = recvint(b->read_fd);
                 window_grow_x(b->window, amount);
                 break;
-        case EVT_GROW_Y_REQUEST:
+        case EVT_GROW_Y:
                 amount = recvint(b->read_fd);
                 window_grow_y(b->window, amount);
                 break;
-        case EVT_NEXT_WINDOW_REQUEST:
+        case EVT_NEXT_WINDOW:
                 if (b->window == e->current_window) {
                         e->current_window = window_next(b->window);
                 }
                 break;
-        case EVT_PREV_WINDOW_REQUEST:
+        case EVT_PREV_WINDOW:
                 if (b->window == e->current_window) {
                         e->current_window = window_prev(b->window);
                 }
                 break;
-        case EVT_HSPLIT_REQUEST:
+        case EVT_GOTO_WINDOW:
+                id = recvint(b->read_fd);
+                if (b->window == e->current_window) {
+                        struct window *w = window_search(e->root_window, id);
+                        if (w != NULL)
+                                e->current_window = w;
+                }
+                break;
+        case EVT_HSPLIT:
                 split = window_hsplit;
-        case EVT_VSPLIT_REQUEST:
+        case EVT_VSPLIT:
                 if (split == NULL)
                         split = window_vsplit;
                 if (b->window != NULL) {
                         id = recvint(b->read_fd);
+                        size = recvint(b->read_fd);
                         buffer = (id == -1) ? newbuffer(e) : findbuffer(e, id);
 
                         if (buffer == NULL) {
@@ -119,6 +129,14 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                                 e->current_window = b->window;
                                 evt_send(b->write_fd, EVT_WINDOW_ID);
                                 sendint(b->write_fd, WINDOW_SIBLING(b->window)->id);
+
+                                if (size == -1)
+                                        break;
+
+                                if (split == window_vsplit)
+                                        window_set_height(WINDOW_SIBLING(b->window), size);
+                                else if (split == window_hsplit)
+                                        window_set_width(WINDOW_SIBLING(b->window), size);
                         }
                 }
                 break;
@@ -129,14 +147,14 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                 else
                         sendint(b->write_fd, b->window->id);
                 break;
-        case EVT_WINDOW_DELETE_REQUEST:
+        case EVT_WINDOW_DELETE:
                 id = recvint(b->read_fd);
                 // TODO
                 break;
-        case EVT_WINDOW_DELETE_CURRENT_REQUEST:
+        case EVT_WINDOW_DELETE_CURRENT:
                 deletewindow(e, b->window);
                 break;
-        case EVT_SHOW_CONSOLE_REQUEST:
+        case EVT_SHOW_CONSOLE:
                 showconsole(e);
                 break;
         case EVT_MESSAGE:
@@ -148,7 +166,7 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                         read(b->read_fd, buf, bytes);
                 buffer = findbuffer(e, id);
                 if (buffer == NULL) {
-                        evt_send(e->console->write_fd, EVT_LOG_REQUEST);
+                        evt_send(e->console->write_fd, EVT_LOG);
                         bytes = sprintf(buf, "Invalid buffer ID used as message target: %d", id);
                         sendint(e->console->write_fd, bytes);
                         write(e->console->write_fd, buf, bytes);
@@ -183,10 +201,10 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                 break;
         case EVT_VM_ERROR:
                 beep();
-        case EVT_LOG_REQUEST:
+        case EVT_LOG:
                 bytes = recvint(b->read_fd);
                 read(b->read_fd, buf, bytes);
-                evt_send(e->console->write_fd, EVT_LOG_REQUEST);
+                evt_send(e->console->write_fd, EVT_LOG);
                 sendint(e->console->write_fd, bytes);
                 write(e->console->write_fd, buf, bytes);
                 break;
@@ -303,9 +321,6 @@ editor_handle_text_input(struct editor *e, char const *s)
         assert(b != NULL);
 
         int bytes = strlen(s);
-
-        LOG("s = <%s>", s);
-        LOG("bytes = %d", bytes);
 
         /*
          * Send the text to the child process associated with the current buffer.
