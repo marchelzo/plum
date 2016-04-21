@@ -91,6 +91,8 @@ static struct {
         { .module = "buffer", .name = "lines",             .fn = builtin_editor_lines               },
         { .module = "buffer", .name = "prevLine",          .fn = builtin_editor_prev_line           },
         { .module = "buffer", .name = "nextLine",          .fn = builtin_editor_next_line           },
+        { .module = "buffer", .name = "scrollLine",        .fn = builtin_editor_scroll_line         },
+        { .module = "buffer", .name = "scrollColumn",      .fn = builtin_editor_scroll_column       },
         { .module = "buffer", .name = "scrollDown",        .fn = builtin_editor_scroll_down         },
         { .module = "buffer", .name = "scrollUp",          .fn = builtin_editor_scroll_up           },
         { .module = "buffer", .name = "centerCurrentLine", .fn = builtin_editor_center_current_line },

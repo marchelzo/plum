@@ -15,6 +15,8 @@
 #include "window.h"
 #include "log.h"
 
+static TickitTerm *term;
+
 noreturn static void
 quit(struct editor *e)
 {
@@ -26,6 +28,8 @@ quit(struct editor *e)
         write(1, INSERT_END_STRING, sizeof INSERT_END_STRING - 1);
 
         endwin();
+        tickit_term_destroy(term);
+
         exit(EXIT_SUCCESS);
 }
 
@@ -65,7 +69,7 @@ int main(void)
         init_pair(1, -1, -1);
         attron(COLOR_PAIR(1));
 
-        TickitTerm *term = tickit_term_open_stdio();
+        term = tickit_term_open_stdio();
         if (term == NULL) {
                 panic("failed to open a TickitTerm instance: %s", strerror(errno));
         }

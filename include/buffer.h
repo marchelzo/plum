@@ -95,6 +95,12 @@ int
 buffer_next_line(int amount);
 
 int
+buffer_scroll_y(void);
+
+int
+buffer_scroll_x(void);
+
+int
 buffer_scroll_up(int amount);
 
 int

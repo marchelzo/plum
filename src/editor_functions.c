@@ -179,6 +179,20 @@ builtin_editor_prev_line(value_vector *args)
 }
 
 struct value
+builtin_editor_scroll_line(value_vector *args)
+{
+        ASSERT_ARGC("buffer::scrollLine()", 0);
+        return INTEGER(buffer_scroll_y());
+}
+
+struct value
+builtin_editor_scroll_column(value_vector *args)
+{
+        ASSERT_ARGC("buffer::scrollColumn()", 0);
+        return INTEGER(buffer_scroll_x());
+}
+
+struct value
 builtin_editor_scroll_up(value_vector *args)
 {
         ASSERT_ARGC_2("buffer::scrollUp()", 0, 1);

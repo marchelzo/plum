@@ -195,42 +195,6 @@ screenlocation(void)
 }
 
 /*
- * This is called whenever the window dimensions change, and it ensures
- * that the cursor is always on a line which is visible in the buffer.
- */
-inline static void
-updatedimensions(int newlines, int newcols)
-{
-        int dy = newlines - lines;
-        int dx = newcols - cols;
-
-        if (dy > 0) {
-                int yscroll = scroll.line;
-                // not sure if this is useful or not
-                //yscroll -= max(newlines - (tb_lines(&data) - yscroll), 0);
-                yscroll -= (dy + 1) / 2;
-                scroll.line = max(yscroll, 0);
-        }
-        if (tb_line(&data) >= scroll.line + newlines) {
-                scroll.line = tb_line(&data) - newlines + 1;
-        }
-
-        if (dx > 0) {
-                int xscroll = scroll.col;
-                xscroll -= max(newcols - (tb_line_width(&data) - xscroll), 0);
-                xscroll -= (dx + 1) / 2;
-                scroll.col = max(xscroll, 0);
-                scroll.col = 0;
-        }
-        if (tb_column(&data) >= scroll.col + newcols) {
-                scroll.col = tb_column(&data) - newcols + 1;
-        }
-
-        lines = newlines;
-        cols = newcols;
-}
-
-/*
  * Called when the screen is scrolled to ensure that the cursor is on a visible line.
  */
 inline static void
@@ -312,7 +276,6 @@ handle_editor_event(int ev)
 {
         int id;
         int bytes;
-        int newlines, newcols;
         static char smallbuf[256];
         static char buf[4096];
         static struct value type;
@@ -346,9 +309,9 @@ handle_editor_event(int ev)
                 break;
         case EVT_WINDOW_DIMENSIONS:
                 backgrounded = false;
-                newlines = recvint(read_fd);
-                newcols = recvint(read_fd);
-                updatedimensions(newlines, newcols);
+                lines = recvint(read_fd);
+                cols = recvint(read_fd);
+                adjust_cursor();
                 break;
         case EVT_BACKGROUNDED:
                 backgrounded = true;
@@ -762,11 +725,21 @@ buffer_prev_line(int amount)
 }
 
 int
+buffer_scroll_y(void)
+{
+        return scroll.line;
+}
+
+int
+buffer_scroll_x(void)
+{
+        return scroll.col;
+}
+
+int
 buffer_scroll_down(int amount)
 {
-        // TODO: allow scrolling further than the last screen height
-
-        int max_possible = (tb_lines(&data) - lines) - scroll.line;
+        int max_possible = (tb_lines(&data) - 1) - scroll.line;
         int scrolling = min(amount, max_possible);
 
         scroll.line += scrolling;

@@ -37,6 +37,12 @@ struct value
 builtin_editor_prev_line(value_vector *args);
 
 struct value
+builtin_editor_scroll_line(value_vector *args);
+
+struct value
+builtin_editor_scroll_column(value_vector *args);
+
+struct value
 builtin_editor_scroll_down(value_vector *args);
 
 struct value
