@@ -95,7 +95,9 @@ sp_tryspawn(char *path, struct value_array *args, struct value on_output, struct
                 close(c2p[0]);
                 close(p2c[1]);
                 close(exc[0]);
-                if (dup2(p2c[0], STDIN_FILENO) == -1 || dup2(c2p[1], STDOUT_FILENO) == -1) {
+                if (dup2(p2c[0], STDIN_FILENO) == -1
+                ||  dup2(c2p[1], STDOUT_FILENO) == -1
+                ||  dup2(c2p[1], STDERR_FILENO) == -1) {
                         write(exc[1], &errno, sizeof errno);
                         exit(EXIT_FAILURE);
                 }

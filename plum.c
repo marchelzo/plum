@@ -27,8 +27,8 @@ quit(struct editor *e)
          */
         write(1, INSERT_END_STRING, sizeof INSERT_END_STRING - 1);
 
-        endwin();
         tickit_term_destroy(term);
+        endwin();
 
         exit(EXIT_SUCCESS);
 }
@@ -60,14 +60,8 @@ int main(void)
         setlocale(LC_ALL, "");
 
         initscr();
-        start_color();
-        use_default_colors();
         noecho();
         raw();
-        refresh();
-
-        init_pair(1, -1, -1);
-        attron(COLOR_PAIR(1));
 
         term = tickit_term_open_stdio();
         if (term == NULL) {
