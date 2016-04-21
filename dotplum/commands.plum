@@ -1,0 +1,92 @@
+import buffer
+import proc
+import editor
+import plum::command as command
+
+function shell() {
+        let p = proc::spawn('bash', [], buffer::insert, nil);
+        buffer::gotoStart();
+        buffer::remove(100000);
+
+        let history = [];
+        let i = 0;
+
+        let atPrompt = true;
+
+        buffer::mapInsert(['Enter'], function () {
+                let line = buffer::getLine();
+
+                if (!atPrompt) {
+                        proc::writeLine(p, line);
+                        return;
+                }
+
+                buffer::insert("\n");
+                
+                proc::writeLine(p, line.slice(2) + '; echo -n \'$ \';');
+
+                history.push(line);
+                i = history.len();
+        });
+
+        function setLine(s) {
+                buffer::startOfLine();
+                buffer::cutLine();
+                buffer::insert(s);
+        }
+
+        buffer::mapInsert(['Up'], function () {
+                if (i != 0)
+                        setLine(history[--i]);
+        });
+
+        buffer::mapInsert(['Down'], function () {
+                if (i + 1 < history.len())
+                        setLine(history[++i]);
+                else {
+                        setLine('$ ');
+                        ++i;
+                }
+        });
+
+        buffer::mapInsert(['C-l'], function () {
+                buffer::gotoStart();
+                buffer::remove(100000);
+                buffer::insert('$ ');
+        });
+
+        buffer::mapInsert(['C-c'], function () {
+                proc::close(p);
+                p = proc::spawn('bash', [], buffer::insert, nil);
+                buffer::gotoStart();
+                buffer::remove(100000);
+                buffer::insert('$ ');
+                buffer::insertMode();
+        });
+
+        buffer::insert('$ ');
+        buffer::insertMode();
+}
+
+function bang(arg) {
+        let p = proc::spawn('bash', ['-c', arg], buffer::insert, nil);
+        proc::close(p);
+        proc::wait(p);
+}
+
+function load(file) {
+        let p = proc::spawn('expand', [file], buffer::insert, nil);
+        proc::wait(p);
+        buffer::gotoStart();
+}
+
+let commands = {
+        'w': buffer::writeFile,
+        '!': bang,
+        'load': load,
+        'shell': shell
+};
+
+for (c in @commands) {
+        command::add(c, commands[c]);
+}

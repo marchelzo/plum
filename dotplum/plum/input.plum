@@ -1,0 +1,24 @@
+import buffer
+import window
+import editor
+
+let id = nil;
+let win = nil;
+
+buffer::onMessage('Start', function (newId, winId) { id = newId; win = int(winId); buffer::insertMode(); });
+
+buffer::mapInsert(['Enter'], function () {
+        let line = buffer::getLine();
+        buffer::sendMessage(id, 'Command', line);
+        buffer::startOfLine();
+        buffer::cutLine();
+        window::goto(win);
+        window::delete();
+});
+
+buffer::mapInsert(['j', 'k'], function () {
+        window::goto(win);
+        window::delete();
+        buffer::startOfLine();
+        buffer::cutLine();
+});

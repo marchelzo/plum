@@ -2,8 +2,24 @@ import buffer
 import editor
 import window
 import proc
+import plum::command as command
+
+/* add some commands */
+import commands
 
 let indent = 4;
+
+function delCurrent() {
+        buffer::startOfLine();
+        buffer::cutLine();
+        if (buffer::line() == buffer::lines() - 1) {
+                buffer::backward(1);
+        }
+
+        buffer::remove(1);
+
+        buffer::startOfLine();
+}
 
 buffer::mapInsert(['Enter'], function () {
         let line = buffer::getLine();
@@ -39,7 +55,7 @@ buffer::mapNormal(['C-w', '-'], |window::growVertically(-4)|);
 buffer::mapNormal(['C-w', '>'], |window::growHorizontally(4)|);
 buffer::mapNormal(['C-w', '<'], |window::growHorizontally(-4)|);
 
-buffer::mapNormal(['C-w', 'C-w'], editor::nextWindow);
+buffer::mapNormal(['C-w', 'C-w'], window::next);
 
 buffer::mapNormal(['j'], buffer::nextLine);
 buffer::mapNormal(['k'], buffer::prevLine);
@@ -135,17 +151,7 @@ buffer::mapNormal(['C'], function () {
         buffer::insertMode();
 });
 
-buffer::mapNormal(['d', 'd'], function () {
-        buffer::startOfLine();
-        buffer::cutLine();
-        if (buffer::line() == buffer::lines() - 1) {
-                buffer::backward(1);
-        }
-
-        buffer::remove(1);
-
-        buffer::startOfLine();
-});
+buffer::mapNormal(['d', 'd'], delCurrent);
 
 buffer::mapInsert(['Tab'], function () { buffer::insert([1 .. (indent - (buffer::column() % indent))].map(|' '|).sum()); });
 
@@ -158,15 +164,27 @@ buffer::mapNormal(['d', 'G'], () -> buffer::remove(100000000));
 buffer::mapNormal(['s'], function () { if (buffer::getChar() != "\n") buffer::remove(1); buffer::insertMode(); });
 buffer::mapNormal(['D'], buffer::cutLine);
 
-let spawnLoop = () -> proc::spawn('bash', ['-c', 'for k in {1..50}; do sleep 0.25 && echo "k = $k"; done'], buffer::insert, () -> buffer::insert("Exited.\n"));
-buffer::mapNormal(['L'], spawnLoop);
-
-let saveFile = function (f) { let p = proc::spawn('bash', ['-c', 'cat > ' + f], nil, nil); [0 .. buffer::lines()).each(i -> proc::writeLine(p, buffer::getLine(i))); proc::close(p); };
-
-buffer::mapNormal(['C-s'], () -> saveFile('MYFILE.txt'));
-
 buffer::mapNormal(['F12'], editor::showConsole);
 
 buffer::mapNormal(['C-w', 'C-v'], window::horizontalSplit);
 buffer::mapNormal(['C-w', 'C-n'], window::verticalSplit);
 buffer::mapNormal(['C-w', 'd'], window::delete);
+
+let inputBuffer = nil;
+buffer::mapNormal([';'], function () {
+
+        if (inputBuffer == nil) {
+                buffer::onMessage('Command', (_, cmd) -> command::run(cmd));
+                inputBuffer = buffer::new('plum::input');
+        }
+
+        let line = buffer::scrollLine();
+        editor::log("line = {line}");
+        let win = window::verticalSplit(inputBuffer, 1);
+        editor::log("dy = {line - buffer::scrollLine()}");
+        /*buffer::scrollDown(line - buffer::scrollLine());*/
+        editor::log("now: {buffer::scrollLine()}");
+
+        buffer::sendMessage(inputBuffer, 'Start', str(window::current()));
+        window::goto(win);
+});

@@ -1,0 +1,26 @@
+import editor
+
+let commands = {};
+
+function docmd(cmd, arg) {
+        let f = commands[cmd];
+        if (f == nil)
+                editor::log('Invalid command: ' + cmd);
+        else
+                f(arg);
+}
+
+export function run(cmd) {
+        match cmd.search(' ') {
+                nil => { docmd(cmd, ''); },
+                i   => {
+                        let c = cmd.slice(0, i);
+                        let arg = cmd.slice(i + 1);
+                        docmd(c, arg);
+                }
+        }
+}
+
+export function add(cmd, func) {
+        commands[cmd] = func;
+}
