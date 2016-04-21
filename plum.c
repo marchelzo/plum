@@ -59,20 +59,20 @@ int main(void)
          */
         setlocale(LC_ALL, "");
 
-        initscr();
-        noecho();
-        raw();
-
         term = tickit_term_open_stdio();
         if (term == NULL) {
                 panic("failed to open a TickitTerm instance: %s", strerror(errno));
         }
 
+        initscr();
+        noecho();
+        raw();
+
         tickit_term_await_started_msec(term, 100);
         tickit_term_setctl_int(term, TICKIT_TERMCTL_CURSORVIS, 1);
 
         int lines, cols;
-        tickit_term_get_size(term, &lines, &cols);
+        getmaxyx(stdscr, lines, cols);
 
         struct editor e;
         editor_init(&e, lines, cols);
