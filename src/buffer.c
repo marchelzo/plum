@@ -773,6 +773,30 @@ buffer_prev_window(void)
 }
 
 void
+buffer_window_right(void)
+{
+        evt_send(write_fd, EVT_WINDOW_RIGHT);
+}
+
+void
+buffer_window_left(void)
+{
+        evt_send(write_fd, EVT_WINDOW_LEFT);
+}
+
+void
+buffer_window_down(void)
+{
+        evt_send(write_fd, EVT_WINDOW_DOWN);
+}
+
+void
+buffer_window_up(void)
+{
+        evt_send(write_fd, EVT_WINDOW_UP);
+}
+
+void
 buffer_goto_window(int id)
 {
         evt_send(write_fd, EVT_GOTO_WINDOW);
@@ -890,9 +914,15 @@ buffer_center_current_line(void)
 }
 
 bool
-buffer_next_match(pcre *re, pcre_extra *extra)
+buffer_next_match_regex(pcre *re, pcre_extra *extra)
 {
-        return tb_next_match(&data, re, extra);
+        return tb_next_match_regex(&data, re, extra);
+}
+
+bool
+buffer_next_match_string(char const *s, int n)
+{
+        return tb_next_match_string(&data, s, n);
 }
 
 int

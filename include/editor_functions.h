@@ -61,6 +61,18 @@ struct value
 builtin_editor_next_window(value_vector *args);
 
 struct value
+builtin_editor_window_right(value_vector *args);
+
+struct value
+builtin_editor_window_left(value_vector *args);
+
+struct value
+builtin_editor_window_up(value_vector *args);
+
+struct value
+builtin_editor_window_down(value_vector *args);
+
+struct value
 builtin_editor_goto_window(value_vector *args);
 
 struct value

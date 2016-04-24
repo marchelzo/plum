@@ -7,7 +7,24 @@
 #include "buffer.h"
 #include "log.h"
 
+enum { ONE, TWO };
+static unsigned char stack[28];
+
 static int winid = 0;
+
+inline static struct window *
+unwind(struct window *w, int i)
+{
+        while (w->type != WINDOW_WINDOW && i > 0) switch (stack[--i]) {
+        case ONE: w = w->one; break;
+        case TWO: w = w->two; break;
+        }
+
+        while (w->type != WINDOW_WINDOW)
+                w = w->one;
+
+        return w;
+}
 
 inline static void
 fixline(struct window *w)
@@ -189,6 +206,87 @@ window_prev(struct window *w)
         return w;
 }
 
+struct window *
+window_right(struct window *w)
+{
+        assert(w->type == WINDOW_WINDOW);
+
+        struct window *p = w->parent;
+
+        int i = 0;
+        while (p != NULL && (p->type != WINDOW_HSPLIT || w == p->right)) {
+                stack[i++] = (w == p->one) ? ONE : TWO;
+                w = p;
+                p = p->parent;
+        }
+
+        if (p == NULL)
+                return NULL;
+
+        return unwind(p->right, i);
+
+}
+
+struct window *
+window_left(struct window *w)
+{
+        assert(w->type == WINDOW_WINDOW);
+
+        struct window *p = w->parent;
+
+        int i = 0;
+        while (p != NULL && (p->type != WINDOW_HSPLIT || w == p->left)) {
+                stack[i++] = (w == p->one) ? ONE : TWO;
+                w = p;
+                p = p->parent;
+        }
+
+        if (p == NULL)
+                return NULL;
+
+        return unwind(p->left, i);
+}
+
+struct window *
+window_up(struct window *w)
+{
+        assert(w->type == WINDOW_WINDOW);
+
+        struct window *p = w->parent;
+
+        int i = 0;
+        while (p != NULL && (p->type != WINDOW_VSPLIT || w == p->top)) {
+                stack[i++] = (w == p->one) ? ONE : TWO;
+                w = p;
+                p = p->parent;
+        }
+
+        if (p == NULL)
+                return NULL;
+
+        return unwind(p->top, i);
+}
+
+struct window *
+window_down(struct window *w)
+{
+        assert(w->type == WINDOW_WINDOW);
+
+        struct window *p = w->parent;
+
+        int i = 0;
+        while (p != NULL && (p->type != WINDOW_VSPLIT || w == p->bot)) {
+                stack[i++] = (w == p->one) ? ONE : TWO;
+                w = p;
+                p = p->parent;
+        }
+
+        if (p == NULL)
+                return NULL;
+
+        return unwind(p->bot, i);
+}
+
 void
 window_grow_y(struct window *w, int dy)
 {
@@ -360,12 +458,12 @@ window_delete(struct window *w)
 }
 
 struct window *
-window_search(struct window const *w, int id)
+window_search(struct window *w, int id)
 {
         if (w == NULL)
                 return NULL;
 
-        struct window *result;
+        struct window *r;
 
         switch (w->type) {
         case WINDOW_WINDOW:
@@ -373,11 +471,11 @@ window_search(struct window const *w, int id)
                 break;
         case WINDOW_HSPLIT:
         case WINDOW_VSPLIT:
-                (result = window_search(w->one, id)) || (result = window_search(w->two, id));
+                (r = window_search(w->one, id)) || (r = window_search(w->two, id));
                 break;
         }
 
-        return result;
+        return r;
 }
 
 TEST(create)

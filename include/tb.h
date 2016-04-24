@@ -129,7 +129,10 @@ int
 tb_line_width(struct tb *s);
 
 bool
-tb_next_match(struct tb *s, pcre *re, pcre_extra *extra);
+tb_next_match_regex(struct tb *s, pcre *re, pcre_extra *extra);
+
+bool
+tb_next_match_string(struct tb *s, char const *p, int bytes);
 
 inline static int
 tb_lines(struct tb const *s)

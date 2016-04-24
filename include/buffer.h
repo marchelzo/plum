@@ -86,6 +86,18 @@ void
 buffer_prev_window(void);
 
 void
+buffer_window_left(void);
+
+void
+buffer_window_right(void);
+
+void
+buffer_window_up(void);
+
+void
+buffer_window_down(void);
+
+void
 buffer_goto_window(int id);
 
 int
@@ -173,7 +185,10 @@ int
 buffer_seek(int i);
 
 bool
-buffer_next_match(pcre *re, pcre_extra *extra);
+buffer_next_match_regex(pcre *re, pcre_extra *extra);
+
+bool
+buffer_next_match_string(char const *s, int n);
 
 int
 buffer_spawn(char *path, struct value_array *args, struct value on_output, struct value on_exit);

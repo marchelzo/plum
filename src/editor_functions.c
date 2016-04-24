@@ -281,6 +281,38 @@ builtin_editor_next_window(value_vector *args)
 }
 
 struct value
+builtin_editor_window_right(value_vector *args)
+{
+        ASSERT_ARGC("window::right()", 0);
+        buffer_window_right();
+        return NIL;
+}
+
+struct value
+builtin_editor_window_left(value_vector *args)
+{
+        ASSERT_ARGC("window::left()", 0);
+        buffer_window_left();
+        return NIL;
+}
+
+struct value
+builtin_editor_window_down(value_vector *args)
+{
+        ASSERT_ARGC("window::down()", 0);
+        buffer_window_down();
+        return NIL;
+}
+
+struct value
+builtin_editor_window_up(value_vector *args)
+{
+        ASSERT_ARGC("window::up()", 0);
+        buffer_window_up();
+        return NIL;
+}
+
+struct value
 builtin_editor_goto_window(value_vector *args)
 {
         ASSERT_ARGC("window::goto()", 1);
@@ -530,11 +562,12 @@ builtin_editor_next_match(value_vector *args)
 
         struct value pattern = args->items[0];
 
-        if (pattern.type != VALUE_REGEX) {
-                vm_panic("non-regex passed to buffer::findNext()");
-        }
-
-        return BOOLEAN(buffer_next_match(pattern.regex, pattern.extra));
+        if (pattern.type == VALUE_REGEX)
+                return BOOLEAN(buffer_next_match_regex(pattern.regex, pattern.extra));
+        else if (pattern.type == VALUE_STRING)
+                return BOOLEAN(buffer_next_match_string(pattern.string, pattern.bytes));
+        else
+                vm_panic("buffer::findNext() expects a regex or a string");
 }
 
 struct value

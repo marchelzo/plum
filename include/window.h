@@ -60,6 +60,18 @@ window_next(struct window *);
 struct window *
 window_prev(struct window *);
 
+struct window *
+window_right(struct window *);
+
+struct window *
+window_left(struct window *);
+
+struct window *
+window_up(struct window *);
+
+struct window *
+window_down(struct window *);
+
 void
 window_grow_y(struct window *w, int dy);
 
@@ -82,6 +94,6 @@ void
 window_delete(struct window *w);
 
 struct window *
-window_search(struct window const *w, int id);
+window_search(struct window *w, int id);
 
 #endif

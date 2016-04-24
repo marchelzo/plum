@@ -74,6 +74,7 @@ findbuffer(struct editor *e, unsigned id)
 static void
 handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
 {
+        static struct window *window;
         static struct buffer *buffer;
         static char buf[4096];
         static char msgbuf[256];
@@ -93,15 +94,30 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                 amount = recvint(b->read_fd);
                 window_grow_y(b->window, amount);
                 break;
-        case EVT_NEXT_WINDOW:
-                if (b->window == e->current_window) {
-                        e->current_window = window_next(b->window);
-                }
-                break;
+        case EVT_WINDOW_RIGHT:
+        case EVT_WINDOW_LEFT:
+        case EVT_WINDOW_DOWN:
+        case EVT_WINDOW_UP:
         case EVT_PREV_WINDOW:
-                if (b->window == e->current_window) {
-                        e->current_window = window_prev(b->window);
+        case EVT_NEXT_WINDOW:
+
+                if (b->window != e->current_window)
+                        break;
+
+                switch (c) {
+                case EVT_WINDOW_RIGHT: window = window_right(e->current_window); break;
+                case EVT_WINDOW_LEFT:  window = window_left(e->current_window);  break;
+                case EVT_WINDOW_DOWN:  window = window_down(e->current_window);  break;
+                case EVT_WINDOW_UP:    window = window_up(e->current_window);    break;
+                case EVT_NEXT_WINDOW:  window = window_next(e->current_window);  break;
+                case EVT_PREV_WINDOW:  window = window_prev(e->current_window);  break;
                 }
+
+                if (window == NULL)
+                        break;
+
+                e->current_window = window;
+
                 break;
         case EVT_GOTO_WINDOW:
                 id = recvint(b->read_fd);

@@ -1208,11 +1208,9 @@ tb_line_width(struct tb *s)
 }
 
 bool
-tb_next_match(struct tb *s, pcre *re, pcre_extra *extra)
+tb_next_match_regex(struct tb *s, pcre *re, pcre_extra *extra)
 {
         char const *r = RIGHT(s);
-
-        LOG("rightcount is %d", s->rightcount);
 
         int out[3];
         int rc = pcre_exec(re, extra, r, s->rightcount, 0, 0, out, 3);
@@ -1220,8 +1218,6 @@ tb_next_match(struct tb *s, pcre *re, pcre_extra *extra)
         /* no match between the cursor and the end of the buffer */
         if (rc < 1)
                 return false;
-
-        LOG("match at: %d", out[0]);
 
         /* there was a match. move to it. */
         stringcount(r, out[0], -1, -1, -1);
@@ -1236,6 +1232,31 @@ tb_next_match(struct tb *s, pcre *re, pcre_extra *extra)
         return true;
 }
 
+bool
+tb_next_match_string(struct tb *s, char const *p, int bytes)
+{
+        char const *r = RIGHT(s);
+
+        char const *m = strstrn(r, s->rightcount, p, bytes);
+
+        /* no match between the cursor and the end of the buffer */
+        if (m == NULL)
+                return false;
+
+        int n = m - r;
+
+        /* there was a match. move to it. */
+        stringcount(r, n, -1, -1, -1);
+
+        memcpy(s->left + s->leftcount, r, outpos.bytes);
+        s->character += outpos.graphemes;
+        s->line += outpos.lines;
+        s->leftcount += outpos.bytes;
+        s->rightcount -= outpos.bytes;
+        s->column = outpos.column + ((outpos.lines >= 1) ? 0 : s->column);
+
+        return true;
+}
 
 static void
 tb_pushs(struct tb *s, char const *data)
