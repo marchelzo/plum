@@ -215,7 +215,7 @@ struct value
 buffer_window_width(void);
 
 int
-buffer_current_window(void);
+buffer_window_id(void);
 
 void
 buffer_delete_window(int id);

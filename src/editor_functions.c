@@ -775,10 +775,10 @@ builtin_editor_window_width(value_vector *args)
 }
 
 struct value
-builtin_editor_current_window(value_vector *args)
+builtin_editor_window_id(value_vector *args)
 {
-        ASSERT_ARGC("window::current()", 0);
-        return INTEGER(buffer_current_window());
+        ASSERT_ARGC("window::id()", 0);
+        return INTEGER(buffer_window_id());
 }
 
 struct value

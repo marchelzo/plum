@@ -1048,7 +1048,7 @@ buffer_vertical_split(int buf, int size)
 }
 
 int
-buffer_current_window(void)
+buffer_window_id(void)
 {
         evt_send(write_fd, EVT_WINDOW_ID);
 

@@ -196,6 +196,8 @@ error(char const *fmt, ...)
                 va_end(ap);
         }
 
+        LOG("Parse Error: %s", errbuf);
+
         longjmp(jb, 1);
 }
 

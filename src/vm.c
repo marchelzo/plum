@@ -118,7 +118,7 @@ static struct {
         { .module = "window", .name = "growHorizontally",  .fn = builtin_editor_grow_horizontally   },
         { .module = "window", .name = "verticalSplit",     .fn = builtin_editor_vertical_split      },
         { .module = "window", .name = "horizontalSplit",   .fn = builtin_editor_horizontal_split    },
-        { .module = "window", .name = "current",           .fn = builtin_editor_current_window      },
+        { .module = "window", .name = "id",                .fn = builtin_editor_window_id           },
         { .module = "window", .name = "delete",            .fn = builtin_editor_delete_window       },
         { .module = "window", .name = "next",              .fn = builtin_editor_next_window         },
         { .module = "window", .name = "prev",              .fn = builtin_editor_prev_window         },
@@ -926,6 +926,8 @@ vm_panic(char const *fmt, ...)
         vsnprintf(err_buf + n, sizeof err_buf - n, fmt, ap);
 
         va_end(ap);
+
+        LOG("VM Error: %s", err_buf);
 
         if (jb_is_set) {
                 longjmp(jb, 1);

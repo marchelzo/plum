@@ -163,7 +163,7 @@ struct value
 builtin_editor_window_width(value_vector *args);
 
 struct value
-builtin_editor_current_window(value_vector *args);
+builtin_editor_window_id(value_vector *args);
 
 struct value
 builtin_editor_delete_window(value_vector *args);

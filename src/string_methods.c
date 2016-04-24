@@ -46,6 +46,7 @@ string_length(struct value *string, value_vector *args)
         }
 
         limitpos.graphemes = -1;
+        limitpos.bytes = string->bytes;
         tickit_string_ncount(string->string, string->bytes, &outpos, &limitpos);
 
         return INTEGER(outpos.graphemes);
