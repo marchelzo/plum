@@ -48,6 +48,9 @@ int
 tb_remove(struct tb *s, int n);
 
 void
+tb_clear(struct tb *s);
+
+void
 tb_insert(struct tb *s, char const *data, int n);
 
 int

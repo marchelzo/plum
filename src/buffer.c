@@ -599,9 +599,6 @@ buffer_current_line(void)
         return tb_clone_line(&data);
 }
 
-/*
- * Insert 'n' bytes from the data pointed to by 'text' into the buffer at the current cursor position.
- */
 void
 buffer_insert_n(char const *text, int n)
 {
@@ -612,6 +609,12 @@ int
 buffer_remove(int n)
 {
         return tb_remove(&data, n);
+}
+
+void
+buffer_clear(void)
+{
+        tb_clear(&data);
 }
 
 int

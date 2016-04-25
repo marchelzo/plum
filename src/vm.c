@@ -112,6 +112,7 @@ static struct {
         { .module = "buffer", .name = "id",                .fn = builtin_editor_buffer_id           },
         { .module = "buffer", .name = "new",               .fn = builtin_editor_buffer_new          },
         { .module = "buffer", .name = "eachLine",          .fn = builtin_editor_buffer_each_line    },
+        { .module = "buffer", .name = "clear",             .fn = builtin_editor_buffer_clear        },
         { .module = "window", .name = "height",            .fn = builtin_editor_window_height       },
         { .module = "window", .name = "width",             .fn = builtin_editor_window_width        },
         { .module = "window", .name = "growVertically",    .fn = builtin_editor_grow_vertically     },

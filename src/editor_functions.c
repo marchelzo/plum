@@ -930,3 +930,11 @@ builtin_editor_buffer_each_line(value_vector *args)
 
         return NIL;
 }
+
+struct value
+builtin_editor_buffer_clear(value_vector *args)
+{
+        ASSERT_ARGC("buffer::clear()", 0);
+        buffer_clear();
+        return NIL;
+}

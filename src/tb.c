@@ -481,6 +481,13 @@ tb_new(void)
         return s;
 }
 
+void
+tb_clear(struct tb *s)
+{
+        seek(s, 0);
+        removen(s, s->characters, s->record_history);
+}
+
 int
 tb_seek(struct tb *s, int i)
 {
@@ -568,6 +575,7 @@ tb_write(struct tb const *s, int fd)
 {
         write(fd, s->left, s->leftcount);
         write(fd, RIGHT(s), s->rightcount);
+        write(fd, "\n", 1);
         // TODO handle write errors
         return 0;
 }
