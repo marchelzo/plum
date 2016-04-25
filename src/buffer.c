@@ -895,6 +895,14 @@ buffer_log(char const *s)
         write(write_fd, s, bytes);
 }
 
+void
+buffer_echo(char const *s, int bytes)
+{
+        evt_send(write_fd, EVT_STATUS_MESSAGE);
+        sendint(write_fd, bytes);
+        write(write_fd, s, bytes);
+}
+
 bool
 buffer_undo(void)
 {
@@ -1093,16 +1101,9 @@ buffer_window_id(void)
 }
 
 void
-buffer_delete_window(int id)
+buffer_delete_window(void)
 {
         evt_send(write_fd, EVT_WINDOW_DELETE);
-        sendint(write_fd, id);
-}
-
-void
-buffer_delete_current_window(void)
-{
-        evt_send(write_fd, EVT_WINDOW_DELETE_CURRENT);
 }
 
 void

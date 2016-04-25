@@ -14,6 +14,9 @@ struct editor {
 
         struct window *root_window;
         struct window *current_window;
+
+        int status_timeout;
+        char status[1024];
 };
 
 void

@@ -7,23 +7,34 @@
 #include "buffer.h"
 #include "log.h"
 
-enum { ONE, TWO };
-static unsigned char stack[28];
-
 static int winid = 0;
 
 inline static struct window *
-unwind(struct window *w, int i)
+root(struct window *w)
 {
-        while (w->type != WINDOW_WINDOW && i > 0) switch (stack[--i]) {
-        case ONE: w = w->one; break;
-        case TWO: w = w->two; break;
-        }
-
-        while (w->type != WINDOW_WINDOW)
-                w = w->one;
+        while (w->parent != NULL)
+                w = w->parent;
 
         return w;
+}
+
+static struct window *
+find(struct window *w, int x, int y)
+{
+        switch (w->type) {
+        case WINDOW_HSPLIT:
+                if (x <= w->left->x + w->left->width)
+                        return find(w->left, x, y);
+                else
+                        return find(w->right, x, y);
+        case WINDOW_VSPLIT:
+                if (y <= w->top->y + w->top->height)
+                        return find(w->top, x, y);
+                else
+                        return find(w->bot, x, y);
+        case WINDOW_WINDOW:
+                return w;
+        }
 }
 
 inline static void
@@ -70,6 +81,43 @@ reconstruct_curses_window(struct window *w)
 {
         delwin(w->window);
         w->window = newwin(w->height, w->width, w->y, w->x);
+}
+
+static void
+fixtree(struct window *w)
+{
+        int extra;
+        switch (w->type) {
+        case WINDOW_VSPLIT:
+                w->one->width = w->width;
+                w->two->width = w->width;
+
+                extra = w->height - (w->one->height + w->two->height + 1);
+                w->one->height += (extra / 2) + (extra & 1);
+                w->two->height += (extra / 2);
+
+                w->one->y = w->y;
+                w->two->y = w->y + w->one->height + 1;
+                break;
+        case WINDOW_HSPLIT:
+                w->one->height = w->height;
+                w->two->height = w->height;
+
+                extra = w->width - (w->one->width + w->two->width + 1);
+                w->one->width += (extra / 2) + (extra & 1);
+                w->two->width += (extra / 2);
+
+                w->one->x = w->x;
+                w->two->x = w->x + w->one->width + 1;
+                break;
+        case WINDOW_WINDOW:
+                reconstruct_curses_window(w);
+                return;
+        }
+
+        fixline(w);
+        fixtree(w->one);
+        fixtree(w->two);
 }
 
 static void
@@ -209,82 +257,41 @@ window_prev(struct window *w)
 struct window *
 window_right(struct window *w)
 {
-        assert(w->type == WINDOW_WINDOW);
-
-        struct window *p = w->parent;
-
-        int i = 0;
-        while (p != NULL && (p->type != WINDOW_HSPLIT || w == p->right)) {
-                stack[i++] = (w == p->one) ? ONE : TWO;
-                w = p;
-                p = p->parent;
-        }
-
-        if (p == NULL)
-                return NULL;
-
-        return unwind(p->right, i);
-
+        struct window *r = root(w);
+        if (w->x + w->width == r->width)
+                return w;
+        else
+                return find(r, w->x + w->width + 1, w->y);
 }
 
 struct window *
 window_left(struct window *w)
 {
-        assert(w->type == WINDOW_WINDOW);
-
-        struct window *p = w->parent;
-
-        int i = 0;
-        while (p != NULL && (p->type != WINDOW_HSPLIT || w == p->left)) {
-                stack[i++] = (w == p->one) ? ONE : TWO;
-                w = p;
-                p = p->parent;
-        }
-
-        if (p == NULL)
-                return NULL;
-
-        return unwind(p->left, i);
+        struct window *r = root(w);
+        if (w->x == 0)
+                return w;
+        else
+                return find(r, w->x - 2, w->y);
 }
 
 struct window *
 window_up(struct window *w)
 {
-        assert(w->type == WINDOW_WINDOW);
-
-        struct window *p = w->parent;
-
-        int i = 0;
-        while (p != NULL && (p->type != WINDOW_VSPLIT || w == p->top)) {
-                stack[i++] = (w == p->one) ? ONE : TWO;
-                w = p;
-                p = p->parent;
-        }
-
-        if (p == NULL)
-                return NULL;
-
-        return unwind(p->top, i);
+        struct window *r = root(w);
+        if (w->y == 0)
+                return w;
+        else
+                return find(r, w->x, w->y - 2);
 }
 
 struct window *
 window_down(struct window *w)
 {
-        assert(w->type == WINDOW_WINDOW);
-
-        struct window *p = w->parent;
-
-        int i = 0;
-        while (p != NULL && (p->type != WINDOW_VSPLIT || w == p->bot)) {
-                stack[i++] = (w == p->one) ? ONE : TWO;
-                w = p;
-                p = p->parent;
-        }
-
-        if (p == NULL)
-                return NULL;
-
-        return unwind(p->bot, i);
+        struct window *r = root(w);
+        if (w->y + w->height == r->height)
+                return w;
+        else
+                return find(r, w->x, w->y + w->height + 1);
 }
 
 void
@@ -422,7 +429,12 @@ window_delete(struct window *w)
         struct window *parent = w->parent;
         struct window *sibling = WINDOW_SIBLING(w);
 
+        /* clear the dividing line and delete its window */
+        werase(parent->window);
+        wnoutrefresh(parent->window);
         delwin(parent->window);
+
+        parent->type = sibling->type;
 
         if (sibling->type == WINDOW_WINDOW) {
                 parent->buffer = sibling->buffer;
@@ -430,26 +442,14 @@ window_delete(struct window *w)
                 parent->window = sibling->window;
                 reconstruct_curses_window(parent);
         } else {
+                parent->window = sibling->window;
                 parent->one = sibling->one;
                 parent->two = sibling->two;
                 parent->one->parent = parent;
                 parent->two->parent = parent;
-                switch (parent->type) {
-                case WINDOW_HSPLIT:
-                        parent->one->width = parent->width;
-                        parent->two->width = parent->width;
-                        break;
-                case WINDOW_VSPLIT:
-                        parent->one->height = parent->height;
-                        parent->two->height = parent->height;
-                        break;
-                }
-                reconstruct_curses_window(parent->one);
-                reconstruct_curses_window(parent->two);
+                fixtree(parent);
+                fixline(parent);
         }
-
-        parent->type = sibling->type;
-        parent->force_redraw = true;
 
         refreshdimensions(parent);
 
@@ -467,7 +467,7 @@ window_search(struct window *w, int id)
 
         switch (w->type) {
         case WINDOW_WINDOW:
-                result = (w->id == id) ? w : NULL;
+                r = (w->id == id) ? w : NULL;
                 break;
         case WINDOW_HSPLIT:
         case WINDOW_VSPLIT:

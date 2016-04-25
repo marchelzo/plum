@@ -8,6 +8,7 @@
 #include "vec.h"
 #include "protocol.h"
 #include "window.h"
+#include "config.h"
 #include "log.h"
 
 inline static void
@@ -21,7 +22,6 @@ deletewindow(struct editor *e, struct window *w)
 
         if (move)
                 e->current_window = window_find_leaf(e->current_window);
-
 }
 
 inline static struct buffer *
@@ -164,11 +164,14 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                         sendint(b->write_fd, b->window->id);
                 break;
         case EVT_WINDOW_DELETE:
-                id = recvint(b->read_fd);
-                // TODO
-                break;
-        case EVT_WINDOW_DELETE_CURRENT:
                 deletewindow(e, b->window);
+                break;
+        case EVT_STATUS_MESSAGE:
+                bytes = recvint(b->read_fd);
+                /* TODO: do something reasonable if bytes >= sizeof e->status */
+                read(b->read_fd, e->status, bytes);
+                e->status[bytes] = '\0';
+                e->status_timeout = 0;
                 break;
         case EVT_SHOW_CONSOLE:
                 showconsole(e);
@@ -246,10 +249,13 @@ editor_init(struct editor *e, int lines, int cols)
         e->nextbufid = 0;
         vec_init(e->buffers);
 
-        e->root_window = window_new(NULL, 0, 0, cols, lines);
+        e->root_window = window_new(NULL, 0, 0, cols, lines - 1);
         e->current_window = e->root_window;
 
         e->console = newbuffer(e);
+
+        e->status[0] = '\0';
+        e->status_timeout = -1;
 }
 
 /*
@@ -361,5 +367,10 @@ editor_do_update(struct editor *e)
                         handle_event(e, c, *vec_get(e->buffers, i));
                 if (errno != EWOULDBLOCK)
                         panic("read() failed: %s", strerror(errno));
+        }
+
+        if (e->status_timeout != -1 && ++e->status_timeout == STATUS_MESSAGE_TIMEOUT) {
+                e->status[0] = '\0';
+                e->status_timeout = -1;
         }
 }

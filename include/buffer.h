@@ -169,6 +169,9 @@ buffer_point(void);
 void
 buffer_log(char const *s);
 
+void
+buffer_echo(char const *s, int n);
+
 bool
 buffer_undo(void);
 
@@ -233,10 +236,7 @@ int
 buffer_window_id(void);
 
 void
-buffer_delete_window(int id);
-
-void
-buffer_delete_current_window(void);
+buffer_delete_window(void);
 
 void
 buffer_register_message_handler(struct value type, struct value f);

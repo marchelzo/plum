@@ -121,6 +121,9 @@ struct value
 builtin_editor_log(value_vector *args);
 
 struct value
+builtin_editor_echo(value_vector *args);
+
+struct value
 builtin_editor_undo(value_vector *args);
 
 struct value

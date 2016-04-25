@@ -1,13 +1,24 @@
 #include <string.h>
 
-#include <tickit.h>
-
+#include "utf8.h"
 #include "value.h"
 #include "util.h"
 #include "vm.h"
 
-static TickitStringPos limitpos = { -1, -1, -1, -1 };
-static TickitStringPos outpos;
+static struct stringpos limitpos = {
+        .columns = -1,
+        .column  = 0,
+        .lines   = -1,
+};
+static struct stringpos outpos;
+
+inline static void
+stringcount(char const *s, int byte_lim, int grapheme_lim)
+{
+        limitpos.bytes = byte_lim;
+        limitpos.graphemes = grapheme_lim;
+        utf8_stringcount(s, byte_lim, &outpos, &limitpos);
+}
 
 inline static bool
 is_prefix(char const *big, int blen, char const *small, int slen)
@@ -45,9 +56,7 @@ string_length(struct value *string, value_vector *args)
                 vm_panic("str.len() expects no arguments but got %zu", args->count);
         }
 
-        limitpos.graphemes = -1;
-        limitpos.bytes = string->bytes;
-        tickit_string_ncount(string->string, string->bytes, &outpos, &limitpos);
+        stringcount(string->string, string->bytes, -1);
 
         return INTEGER(outpos.graphemes);
 }
@@ -83,9 +92,7 @@ string_slice(struct value *string, value_vector *args)
                 n = -1;
         }
 
-        limitpos.graphemes = -1;
-        limitpos.bytes = string->bytes;
-        tickit_string_ncount(s, string->bytes, &outpos, &limitpos);
+        stringcount(s, string->bytes, -1);
 
         if (i < 0) {
                 i += outpos.graphemes;
@@ -95,14 +102,11 @@ string_slice(struct value *string, value_vector *args)
                 return NIL;
         }
         
-        limitpos.graphemes = i;
-        tickit_string_ncount(s, string->bytes, &outpos, &limitpos);
+        stringcount(s, string->bytes, i);
 
         i = outpos.bytes;
 
-        limitpos.bytes -= outpos.bytes;
-        limitpos.graphemes = n;
-        tickit_string_ncount(s + i, limitpos.bytes, &outpos, &limitpos);
+        stringcount(s + i, limitpos.bytes - outpos.bytes, n);
 
         return STRING_VIEW(*string, i, outpos.bytes);
 }
@@ -150,10 +154,7 @@ string_search(struct value *string, value_vector *args)
                 n = out[0];
         }
 
-        limitpos.graphemes = -1;
-        limitpos.bytes = n;
-        tickit_string_ncount(s, n, &outpos, &limitpos);
-        limitpos.bytes = -1;
+        stringcount(s, n, -1);
 
         return INTEGER(outpos.graphemes);
 }
@@ -496,9 +497,7 @@ string_char(struct value *string, value_vector *args)
                 vm_panic("non-integer passed to the char method on string");
         }
 
-        limitpos.graphemes = i.integer;
-        limitpos.bytes = string->bytes;
-        tickit_string_ncount(string->string, string->bytes, &outpos, &limitpos);
+        stringcount(string->string, string->bytes, i.integer);
 
         if (outpos.graphemes != i.integer) {
                 return NIL;
@@ -506,9 +505,7 @@ string_char(struct value *string, value_vector *args)
 
         int offset = outpos.bytes;
 
-        limitpos.graphemes = 1;
-        limitpos.bytes = string->bytes - offset;
-        tickit_string_ncount(string->string + offset, limitpos.bytes, &outpos, &limitpos);
+        stringcount(string->string + offset, string->bytes - offset, 1);
 
         if (outpos.graphemes != 1) {
                 return NIL;
@@ -530,9 +527,7 @@ string_chars(struct value *string, value_vector *args)
         int n = string->bytes;
 
         while (n > 0) {
-                limitpos.bytes = n;
-                limitpos.graphemes = 1;
-                tickit_string_ncount(string->string + i, n, &outpos, &limitpos);
+                stringcount(string->string + i, n, 1);
                 value_array_push(result.array, STRING_VIEW(*string, i, outpos.bytes));
                 i += outpos.bytes;
                 n -= outpos.bytes;

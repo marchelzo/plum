@@ -24,6 +24,19 @@
 #include "window.h"
 #include "log.h"
 
+inline static void
+drawstatus(struct editor const *e)
+{
+        move(e->root_window->height, 0);
+        bkgdset(A_REVERSE);
+        attron(A_BOLD);
+        addstr(e->status);
+        clrtoeol();
+        attroff(A_BOLD);
+        bkgdset(A_NORMAL);
+        wnoutrefresh(stdscr);
+}
+
 inline static char *
 getdata(struct buffer *b)
 {
@@ -101,6 +114,8 @@ render(struct editor *e)
 
         if (!draw(e->root_window))
                 return;
+
+        drawstatus(e);
         
         int y = e->current_window->cursor.y;
         int x = e->current_window->cursor.x;

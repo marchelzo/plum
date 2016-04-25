@@ -5,6 +5,7 @@
 #include <stdnoreturn.h>
 #include <ncurses.h>
 #include <locale.h>
+#include <signal.h>
 
 #include <tickit.h>
 
@@ -15,7 +16,14 @@
 #include "window.h"
 #include "log.h"
 
+static bool background;
 static TickitTerm *term;
+
+static void
+resume(int _)
+{
+        background = false;
+}
 
 noreturn static void
 quit(struct editor *e)
@@ -42,6 +50,9 @@ handle_term_input_event(TickitTerm *term, TickitEventType _, void *info, void *c
         if (event->type == TICKIT_KEYEV_KEY) {
                 if (strcmp(event->str, "C-d") == 0) {
                         quit(e);
+                } else if (strcmp(event->str, "C-z") == 0) {
+                        background = true;
+                        raise(SIGTSTP);
                 } else {
                         editor_handle_key_input(e, event->str);
                 }
@@ -79,13 +90,19 @@ int main(void)
 
         tickit_term_bind_event(term, TICKIT_EV_KEY, 0, handle_term_input_event, &e);
 
+        signal(SIGCONT, resume);
+
         unsigned b1 = editor_create_file_buffer(&e, "");
         editor_view_buffer(&e, e.current_window, b1);
 
         for (;;) {
-                render(&e);
-                tickit_term_input_wait_msec(term, 10);
                 editor_do_update(&e);
+                if (!background) {
+                        render(&e);
+                        tickit_term_input_wait_msec(term, 10);
+                } else {
+                        usleep(10 * 1000);
+                }
         }
 
         return 0;

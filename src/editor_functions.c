@@ -534,6 +534,21 @@ builtin_editor_log(value_vector *args)
 }
 
 struct value
+builtin_editor_echo(value_vector *args)
+{
+        ASSERT_ARGC("editor::echo()", 1);
+
+        struct value message = args->items[0];
+        
+        if (message.type != VALUE_STRING)
+                vm_panic("non-string passed to editor::echo()");
+
+        buffer_echo(message.string, message.bytes);
+
+        return NIL;
+}
+
+struct value
 builtin_editor_undo(value_vector *args)
 {
         ASSERT_ARGC("buffer::undo()", 0);
@@ -817,20 +832,8 @@ builtin_editor_window_id(value_vector *args)
 struct value
 builtin_editor_delete_window(value_vector *args)
 {
-        ASSERT_ARGC_2("window::delete()", 0, 1);
-
-        if (args->count == 0) {
-                buffer_delete_current_window();
-                return NIL;
-        }
-
-        struct value id = args->items[0];
-
-        if (id.type != VALUE_INTEGER)
-                vm_panic("non-integer passed to window::delete()");
-
-        buffer_delete_window(id.integer);
-
+        ASSERT_ARGC("window::delete()", 0);
+        buffer_delete_window();
         return NIL;
 }
 

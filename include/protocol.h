@@ -36,9 +36,9 @@ enum {
         EVT_VM_ERROR,
         EVT_LOG,
         EVT_SHOW_CONSOLE,
+        EVT_STATUS_MESSAGE,
         EVT_WINDOW_ID,
         EVT_WINDOW_DELETE,
-        EVT_WINDOW_DELETE_CURRENT,
 };
 
 static inline void
