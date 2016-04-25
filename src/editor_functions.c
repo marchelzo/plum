@@ -391,8 +391,6 @@ builtin_editor_source(value_vector *args)
                 vm_panic("non-string passed to buffer::source()");
         }
 
-        buffer_source_file(path.string, path.bytes);
-
         return NIL;
 }
 
@@ -729,6 +727,21 @@ builtin_editor_write_file(value_vector *args)
                 vm_panic("non-string passed to buffer::writeFile()");
 
         buffer_write_file(filename.string, filename.bytes);
+
+        return NIL;
+}
+
+struct value
+builtin_editor_edit_file(value_vector *args)
+{
+        ASSERT_ARGC("buffer::editFile()", 1);
+
+        struct value filename = args->items[0];
+
+        if (filename.type != VALUE_STRING)
+                vm_panic("non-string passed to buffer::editFile()");
+
+        buffer_load_file(filename.string, filename.bytes);
 
         return NIL;
 }

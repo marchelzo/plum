@@ -160,6 +160,9 @@ struct value
 builtin_editor_write_file(value_vector *args);
 
 struct value
+builtin_editor_edit_file(value_vector *args);
+
+struct value
 builtin_editor_file_name(value_vector *args);
 
 struct value

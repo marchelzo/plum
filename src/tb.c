@@ -454,6 +454,13 @@ redo(struct tb *s, struct edit const *e)
         }
 }
 
+inline static void
+free_edit(struct edit *e)
+{
+        for (int i = 0; i < e->changes.count; ++i)
+                vec_empty(e->changes.items[i].data);
+}
+
 struct tb
 tb_new(void)
 {
@@ -486,6 +493,25 @@ tb_clear(struct tb *s)
 {
         seek(s, 0);
         removen(s, s->characters, s->record_history);
+}
+
+/*
+ * Free all memory used by the tb. This can leave
+ * the tb in an invalid state.
+ */
+void
+tb_murder(struct tb *s)
+{
+        free(s->left);
+        free(s->right);
+
+        for (int i = 0; i < s->markers.count; ++i)
+                free(s->markers.items[i]);
+        vec_empty(s->markers);
+
+        for (int i = 0; i < s->edits.count; ++i)
+                free_edit(&s->edits.items[i]);
+        vec_empty(s->edits);
 }
 
 int

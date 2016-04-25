@@ -254,45 +254,13 @@ editor_init(struct editor *e, int lines, int cols)
 
         e->console = newbuffer(e);
 
+        struct buffer *b = newbuffer(e);
+        b->window = e->current_window;
+        e->current_window->buffer = b;
+        window_notify_dimensions(e->current_window);
+
         e->status[0] = '\0';
         e->status_timeout = -1;
-}
-
-/*
- * Open a new buffer in the editor pointed to be 'e', with the contents
- * of the file whose path is 'path'.
- *
- * Returns the buffer id of the new buffer.
- */
-unsigned
-editor_create_file_buffer(struct editor *e, char const *path)
-{
-        struct buffer *b = newbuffer(e);
-        int bytes = strlen(path);
-
-        evt_send(b->write_fd, EVT_LOAD_FILE);
-        sendint(b->write_fd, bytes);
-        write(b->write_fd, path, bytes);
-
-        return b->id;
-}
-
-/*
- * Make the buffer with id 'buf_id' be the buffer associated with the window
- * pointed to by 'w'. If there was previously another buffer associated with 'w',
- * it will no longer be assoicated with a window.
- */
-void
-editor_view_buffer(struct editor *e, struct window *w, unsigned buf_id)
-{
-        struct buffer *b = findbuffer(e, buf_id);
-        assert(b != NULL);
-
-        assert(w->type == WINDOW_WINDOW);
-        w->buffer = b;
-        b->window = w;
-
-        window_notify_dimensions(w);
 }
 
 /*

@@ -18,7 +18,6 @@
 #include "test.h"
 #include "util.h"
 #include "panic.h"
-#include "file.h"
 #include "buffer.h"
 #include "protocol.h"
 #include "window.h"
@@ -58,6 +57,7 @@ render_window(struct window *w)
         else
                 changed = true;
 
+        wbkgdset(w->window, COLOR_PAIR(3));
         werase(w->window);
 
         char const *src = getdata(b);

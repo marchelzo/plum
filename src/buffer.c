@@ -27,26 +27,20 @@
 #include "test.h"
 #include "util.h"
 #include "panic.h"
-#include "file.h"
 #include "buffer.h"
 #include "protocol.h"
 #include "subprocess.h"
 #include "log.h"
 #include "vm.h"
 
-static int
-buffer_load_file(char const *);
+static char buffer[4096];
+static char shortpath[4096];
+static char fullpath[4096];
 
 enum {
         BUFFER_RENDERBUFFER_SIZE = 65536,
-        BUFFER_LOAD_OK,
-        BUFFER_LOAD_NO_PERMISSION,
-        BUFFER_LOAD_NO_SUCH_FILE
 };
 
-static char filename[512];
-
-static struct file file;
 static struct tb data;
 static bool backgrounded;
 
@@ -277,34 +271,17 @@ handle_editor_event(int ev)
         int id;
         int bytes;
         static char smallbuf[256];
-        static char buf[4096];
         static struct value type;
 
         switch (ev) {
-        case EVT_LOAD_FILE: {
-                int size = recvint(read_fd);
-                char *path = alloc(size + 1);
-                path[size] = '\0';
-                read(read_fd, path, size);
-
-                buffer_load_file(path);
-
-                /*
-                 * Start recording changes, and start a new edit group.
-                 */
-                tb_start_history(&data);
-                tb_start_new_edit(&data);
-
-                break;
-        }
         case EVT_LOG:
                 /*
                  * This event will only ever be received in the console buffer (for now).
                  */
                 bytes = recvint(read_fd);
-                read(read_fd, buf, bytes);
+                read(read_fd, buffer, bytes);
                 tb_end(&data);
-                tb_insert(&data, buf, bytes);
+                tb_insert(&data, buffer, bytes);
                 tb_insert(&data, "\n", 1);
                 break;
         case EVT_WINDOW_DIMENSIONS:
@@ -325,16 +302,16 @@ handle_editor_event(int ev)
                 if (bytes == -1) {
                         state_handle_message(&state, INTEGER(id), type, NIL);
                 } else {
-                        read(read_fd, buf, bytes);
-                        state_handle_message(&state, INTEGER(id), type, STRING_CLONE(buf, bytes));
+                        read(read_fd, buffer, bytes);
+                        state_handle_message(&state, INTEGER(id), type, STRING_CLONE(buffer, bytes));
                 }
                 break;
         case EVT_RUN_PROGRAM:
                 bytes = recvint(read_fd);
                 read(read_fd, smallbuf, bytes);
-                snprintf(buf, sizeof buf - 1, "import %.*s\n", bytes, smallbuf);
+                snprintf(buffer, sizeof buffer - 1, "import %.*s\n", bytes, smallbuf);
                 /* TODO: maybe check the return value of vm_execute here? */
-                vm_execute(buf);
+                vm_execute(buffer);
                 break;
         case EVT_TEXT_INPUT:
                 bytes = recvint(read_fd);
@@ -350,13 +327,13 @@ handle_editor_event(int ev)
 
                 if (strcmp(input_buffer, "C-j") == 0) {
                         char *line = buffer_current_line();
-                        sprintf(buf, "print(%s);", line);
+                        sprintf(buffer, "print(%s);", line);
                         tb_insert(&data, "\n", 1);
                         if (strlen(line) == 0) break;
-                        if (vm_execute(buf)) {
+                        if (vm_execute(buffer)) {
                                 char const *out = vm_get_output();
                                 tb_insert(&data, out, strlen(out));
-                        } else if (strstr(vm_error(), "ParseError") != NULL && (sprintf(buf, "%s\n", line), vm_execute(buf))) {
+                        } else if (strstr(vm_error(), "ParseError") != NULL && (sprintf(buffer, "%s\n", line), vm_execute(buffer))) {
                                 char const *out = vm_get_output();
                                 tb_insert(&data, out, strlen(out));
                         } else {
@@ -441,16 +418,15 @@ buffer_main(void)
                                 handle_editor_event(evt_recv(read_fd));
 
                         /* check any subprocesses */
-                        static char proc_out_buf[4096];
                         for (int i = 1; i < pollfds.count; ++i) {
                                 if (pollfds.items[i].revents & (POLLIN | POLLHUP)) {
-                                        int r = read(pollfds.items[i].fd, proc_out_buf, sizeof proc_out_buf);
+                                        int r = read(pollfds.items[i].fd, buffer, sizeof buffer);
                                         if (r == 0) {
                                                 int fd = pollfds.items[i].fd;
                                                 rempollfd(i--);
                                                 sp_on_exit(fd);
                                         } else {
-                                                sp_on_output(pollfds.items[i].fd, proc_out_buf, r);
+                                                sp_on_output(pollfds.items[i].fd, buffer, r);
                                         }
                                 }
                         }
@@ -536,7 +512,6 @@ buffer_new(unsigned id)
                 evt_send(c2p[1], EVT_CHILD_LOCKED_MUTEX);
 
                 data = tb_new();
-                file = file_invalid();
                 state = state_new();
                 read_fd = p2c[0];
                 write_fd = c2p[1];
@@ -569,28 +544,6 @@ buffer_new(unsigned id)
                         .window = NULL,
                 };
         }
-}
-
-static int
-buffer_load_file(char const *path)
-{
-        int fd = open(path, O_RDONLY);
-        if (fd == -1) {
-                switch (errno) {
-                case EACCES: return BUFFER_LOAD_NO_PERMISSION;
-                case ENOENT: return BUFFER_LOAD_NO_SUCH_FILE;
-                default:     panic("unknown error");
-                }
-        }
-
-        file = file_new(path);
-
-        tb_read(&data, fd);
-        tb_seek(&data, 0);
-
-        close(fd);
-
-        return BUFFER_LOAD_OK;
 }
 
 char *
@@ -831,13 +784,6 @@ buffer_insert_mode(void)
 }
 
 void
-buffer_source_file(char const *path, int bytes)
-{
-        memcpy(filename, path, bytes);
-        filename[bytes] = '\0';
-}
-
-void
 buffer_cut_line(void)
 {
         tb_truncate_line(&data);
@@ -1010,19 +956,17 @@ buffer_write_to_subprocess(int fd, char const *data, int n)
 void
 buffer_write_file(char const *path, int n)
 {
-        static char pathbuf[1024];
-
-        if (n >= 1024) {
-                blog("Filename is too long. Not writing.");
+        if (n >= sizeof buffer) {
+                blog("Filename '%.10s...' is too long. Not writing.", path);
                 return;
         }
 
-        memcpy(pathbuf, path, n);
-        pathbuf[n] = '\0';
+        memcpy(buffer, path, n);
+        buffer[n] = '\0';
 
-        int fd = open(pathbuf, O_WRONLY | O_TRUNC | O_CREAT, 0666);
+        int fd = open(buffer, O_WRONLY | O_TRUNC | O_CREAT, 0666);
         if (fd == -1) {
-                blog("Failed to open %s for writing: %s", pathbuf, strerror(errno));
+                blog("Failed to open %s for writing: %s", buffer, strerror(errno));
                 return;
         }
 
@@ -1031,21 +975,50 @@ buffer_write_file(char const *path, int n)
         close(fd);
 }
 
+void
+buffer_load_file(char const *path, int n)
+{
+        if (n >= sizeof buffer) {
+                blog("Filename '%.10s...' is too long. Not reading.", path);
+                return;
+        }
+
+        memcpy(buffer, path, n);
+        buffer[n] = '\0';
+
+        int fd = open(buffer, O_RDONLY | O_CREAT, 0666);
+        if (fd == -1) {
+                blog("Failed to open %s for reading: %s", buffer, strerror(errno));
+        }
+
+        tb_murder(&data);
+        data = tb_new();
+
+        tb_read(&data, fd);
+        tb_seek(&data, 0);
+
+        tb_start_history(&data);
+        tb_start_new_edit(&data);
+
+        getcwd(fullpath, sizeof fullpath);
+        memcpy(shortpath, path, n);
+
+        int pwdlen = strlen(fullpath);
+        fullpath[pwdlen++] = '/';
+        memcpy(fullpath + pwdlen, path, n);
+}
+
 bool
 buffer_save_file(void)
 {
-        if (file.path == NULL)
-                return false;
-
-        buffer_write_file(file.path, strlen(file.path));
-
+        /* TODO: implement this */
         return true;
 }
 
 char const *
 buffer_file_name(void)
 {
-        return file.path;
+        return fullpath;
 }
 
 void
@@ -1179,37 +1152,4 @@ blog(char const *fmt, ...)
         va_end(ap);
 
         buffer_log(logbuf);
-}
-
-TEST(setup)
-{
-        file = file_invalid();
-        data = tb_new();
-}
-
-TEST(create) // OFF
-{
-        if (buffer_load_file("foo.txt") != BUFFER_LOAD_OK) {
-                claim(!"couldn't open foo.txt");
-        }
-
-        claim(strcmp("foo.txt", file.path) == 0);
-}
-
-TEST(nofile)
-{
-        claim(buffer_load_file("some_file_that_doesnt_exist.txt") == BUFFER_LOAD_NO_SUCH_FILE);
-}
-
-TEST(permissions)
-{
-        claim(buffer_load_file("pfile") == BUFFER_LOAD_NO_PERMISSION);
-}
-
-TEST(bigfile) // OFF
-{
-        buffer_load_file("bigfile.txt");
-
-        tb_seek(&data, 238472);
-        tb_insert(&data, "   testing   ", 11);
 }

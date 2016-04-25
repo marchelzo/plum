@@ -106,6 +106,7 @@ static struct {
         { .module = "buffer", .name = "seek",              .fn = builtin_editor_seek                },
         { .module = "buffer", .name = "findNext",          .fn = builtin_editor_next_match          },
         { .module = "buffer", .name = "writeFile",         .fn = builtin_editor_write_file          },
+        { .module = "buffer", .name = "editFile",          .fn = builtin_editor_edit_file           },
         { .module = "buffer", .name = "fileName",          .fn = builtin_editor_file_name           },
         { .module = "buffer", .name = "sendMessage",       .fn = builtin_editor_send_message        },
         { .module = "buffer", .name = "onMessage",         .fn = builtin_editor_on_message          },

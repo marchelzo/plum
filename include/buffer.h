@@ -10,7 +10,6 @@
 #include <pthread.h>
 #include <pcre.h>
 
-#include "file.h"
 #include "value.h"
 
 jmp_buf buffer_err_jb;
@@ -44,7 +43,6 @@ struct buffer {
  */
 struct buffer
 buffer_new(unsigned id);
-
 
 /*
  * These functions are called within the child process and should never be called by the parent.
@@ -213,6 +211,12 @@ buffer_save_file(void);
 
 void
 buffer_write_file(char const *path, int n);
+
+void
+buffer_load_file(char const *path, int n);
+
+void
+buffer_clear(void);
 
 char const *
 buffer_file_name(void);

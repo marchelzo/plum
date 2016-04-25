@@ -92,9 +92,6 @@ int main(void)
 
         signal(SIGCONT, resume);
 
-        unsigned b1 = editor_create_file_buffer(&e, "");
-        editor_view_buffer(&e, e.current_window, b1);
-
         for (;;) {
                 editor_do_update(&e);
                 if (!background) {

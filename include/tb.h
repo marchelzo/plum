@@ -51,6 +51,9 @@ void
 tb_clear(struct tb *s);
 
 void
+tb_murder(struct tb *s);
+
+void
 tb_insert(struct tb *s, char const *data, int n);
 
 int
