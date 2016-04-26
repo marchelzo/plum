@@ -14,6 +14,7 @@
 #include "buffer.h"
 #include "render.h"
 #include "window.h"
+#include "colors.h"
 #include "log.h"
 
 static bool background;
@@ -71,13 +72,15 @@ int main(void)
         setlocale(LC_ALL, "");
 
         term = tickit_term_open_stdio();
-        if (term == NULL) {
+        if (term == NULL)
                 panic("failed to open a TickitTerm instance: %s", strerror(errno));
-        }
 
         initscr();
         noecho();
         raw();
+
+        if (!colors_init())
+                panic("oh no! your terminal doesn't have sufficient color support!");
 
         tickit_term_await_started_msec(term, 100);
         tickit_term_setctl_int(term, TICKIT_TERMCTL_CURSORVIS, 1);
@@ -93,11 +96,13 @@ int main(void)
         signal(SIGCONT, resume);
 
         for (;;) {
-                editor_do_update(&e);
-                if (!background) {
-                        render(&e);
+                while (!background) {
                         tickit_term_input_wait_msec(term, 10);
-                } else {
+                        editor_do_update(&e);
+                        render(&e);
+                }
+                while (background) {
+                        editor_do_update(&e);
                         usleep(10 * 1000);
                 }
         }

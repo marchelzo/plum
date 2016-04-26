@@ -117,6 +117,7 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                         break;
 
                 e->current_window = window;
+                window->force_redraw = true;
 
                 break;
         case EVT_GOTO_WINDOW:
@@ -240,16 +241,13 @@ current_buffer(struct editor const *e)
         return e->current_window->buffer;
 }
 
-/*
- * Create a new editor with one root window and no open buffers.
- */
 void
 editor_init(struct editor *e, int lines, int cols)
 {
         e->nextbufid = 0;
         vec_init(e->buffers);
 
-        e->root_window = window_new(NULL, 0, 0, cols, lines - 1);
+        e->root_window = window_root(0, 1, cols, lines - 1);
         e->current_window = e->root_window;
 
         e->console = newbuffer(e);

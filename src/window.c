@@ -6,6 +6,7 @@
 #include "test.h"
 #include "buffer.h"
 #include "log.h"
+#include "colors.h"
 
 static int winid = 0;
 
@@ -23,35 +24,17 @@ find(struct window *w, int x, int y)
 {
         switch (w->type) {
         case WINDOW_HSPLIT:
-                if (x <= w->left->x + w->left->width)
+                if (x < w->left->x + w->left->width)
                         return find(w->left, x, y);
                 else
                         return find(w->right, x, y);
         case WINDOW_VSPLIT:
-                if (y <= w->top->y + w->top->height)
+                if (y < w->top->y + w->top->height)
                         return find(w->top, x, y);
                 else
                         return find(w->bot, x, y);
         case WINDOW_WINDOW:
                 return w;
-        }
-}
-
-inline static void
-fixline(struct window *w)
-{
-        switch (w->type) {
-        case WINDOW_VSPLIT:
-                wresize(w->window, 1, w->width);
-                mvwin(w->window, w->y + w->top->height, w->x);
-                mvwhline(w->window, 0, 0, ACS_HLINE, w->width);
-                break;
-        case WINDOW_HSPLIT:
-                wresize(w->window, w->height, 1);
-                mvwin(w->window, w->y, w->x + w->left->width);
-                mvwvline(w->window, 0, 0, ACS_VLINE, w->height);
-                break;
-        default: assert(!"fixline called on non-split");
         }
 }
 
@@ -81,6 +64,7 @@ reconstruct_curses_window(struct window *w)
 {
         delwin(w->window);
         w->window = newwin(w->height, w->width, w->y, w->x);
+        wbkgdset(w->window, COLOR_PAIR(w->color));
 }
 
 static void
@@ -92,30 +76,29 @@ fixtree(struct window *w)
                 w->one->width = w->width;
                 w->two->width = w->width;
 
-                extra = w->height - (w->one->height + w->two->height + 1);
+                extra = w->height - (w->one->height + w->two->height);
                 w->one->height += (extra / 2) + (extra & 1);
                 w->two->height += (extra / 2);
 
                 w->one->y = w->y;
-                w->two->y = w->y + w->one->height + 1;
+                w->two->y = w->y + w->one->height;
                 break;
         case WINDOW_HSPLIT:
                 w->one->height = w->height;
                 w->two->height = w->height;
 
-                extra = w->width - (w->one->width + w->two->width + 1);
+                extra = w->width - (w->one->width + w->two->width);
                 w->one->width += (extra / 2) + (extra & 1);
                 w->two->width += (extra / 2);
 
                 w->one->x = w->x;
-                w->two->x = w->x + w->one->width + 1;
+                w->two->x = w->x + w->one->width;
                 break;
         case WINDOW_WINDOW:
                 reconstruct_curses_window(w);
                 return;
         }
 
-        fixline(w);
         fixtree(w->one);
         fixtree(w->two);
 }
@@ -141,14 +124,8 @@ propagate(struct window *w, int dx, int dy, int dw, int dh)
                 propagate(w->right, dx, dy, dw, dh);
                 return;
         case WINDOW_WINDOW:
-                /*
-                 * If there is a buffer associated with this window, notify it of the
-                 * new window dimensions.
-                 */
-                if (w->buffer != NULL) {
-                        refreshdimensions(w);
-			reconstruct_curses_window(w);
-                }
+                refreshdimensions(w);
+                reconstruct_curses_window(w);
                 return;
         }
 }
@@ -156,6 +133,8 @@ propagate(struct window *w, int dx, int dy, int dw, int dh)
 inline static void
 delete(struct window *w)
 {
+        colors_free(w->color);
+
         delwin(w->window);
 
         w->buffer->window = NULL;
@@ -164,19 +143,23 @@ delete(struct window *w)
         free(w);
 }
 
-
-struct window *
+static struct window *
 window_new(
         struct window *parent,
         int x,
         int y,
         int width,
-        int height
+        int height,
+        int color
 ) {
         struct window *w = alloc(sizeof *w);
 
         w->type = WINDOW_WINDOW;
+
+        w->color = color;
         w->window = newwin(height, width, y, x);
+        wbkgdset(w->window, COLOR_PAIR(color));
+
         w->buffer = NULL;
         w->id = winid++;
 
@@ -189,6 +172,12 @@ window_new(
         w->insert_mode = false;
 
         return w;
+}
+
+struct window *
+window_root(int x, int y, int width, int height)
+{
+        return window_new(NULL, x, y, width, height, colors_next(-1));
 }
 
 void
@@ -261,7 +250,7 @@ window_right(struct window *w)
         if (w->x + w->width == r->width)
                 return w;
         else
-                return find(r, w->x + w->width + 1, w->y);
+                return find(r, w->x + w->width, w->y);
 }
 
 struct window *
@@ -271,7 +260,7 @@ window_left(struct window *w)
         if (w->x == 0)
                 return w;
         else
-                return find(r, w->x - 2, w->y);
+                return find(r, w->x - 1, w->y);
 }
 
 struct window *
@@ -281,7 +270,7 @@ window_up(struct window *w)
         if (w->y == 0)
                 return w;
         else
-                return find(r, w->x, w->y - 2);
+                return find(r, w->x, w->y - 1);
 }
 
 struct window *
@@ -291,7 +280,7 @@ window_down(struct window *w)
         if (w->y + w->height == r->height)
                 return w;
         else
-                return find(r, w->x, w->y + w->height + 1);
+                return find(r, w->x, w->y + w->height);
 }
 
 void
@@ -317,8 +306,6 @@ window_grow_y(struct window *w, int dy)
                 propagate(w, 0, -dy, 0, dy);
                 propagate(p->top, 0, 0, 0, -dy);
         }
-
-        mvwin(p->window, p->y + p->top->height, p->x);
 }
 
 void
@@ -344,8 +331,6 @@ window_grow_x(struct window *w, int dx)
                 propagate(w, -dx, 0, dx, 0);
                 propagate(p->left, 0, 0, -dx, 0);
         }
-
-        fixline(p);
 }
 
 void
@@ -366,23 +351,23 @@ window_vsplit(struct window *w, struct buffer *buffer)
         assert(w->type == WINDOW_WINDOW);
 
         int topheight = w->height / 2;
-        int botheight = w->height - topheight - 1;
+        int botheight = w->height - topheight;
 
         unsigned id = w->id;
+        int color = w->color;
         struct buffer *b = w->buffer;
+
         delwin(w->window);
 
         w->type = WINDOW_VSPLIT;
-        w->top = window_new(w, w->x, w->y, w->width, topheight);
-        w->bot = window_new(w, w->x, w->y + topheight + 1, w->width, botheight);
+        w->top = window_new(w, w->x, w->y, w->width, topheight, color);
+        w->bot = window_new(w, w->x, w->y + topheight, w->width, botheight, colors_next(color));
 
         w->top->id = id;
         w->top->buffer = b;
+        w->top->color = color;
 
         w->bot->buffer = buffer;
-
-        w->window = newwin(1, w->width, w->y + topheight, w->x);
-        fixline(w);
 
         refreshdimensions(w->top);
         refreshdimensions(w->bot);
@@ -396,24 +381,23 @@ window_hsplit(struct window *w, struct buffer *buffer)
         assert(w->type == WINDOW_WINDOW);
 
         int leftwidth = w->width / 2;
-        int rightwidth = w->width - leftwidth - 1;
+        int rightwidth = w->width - leftwidth;
 
         unsigned id = w->id;
         struct buffer *b = w->buffer;
-        werase(w->window);
+        int color = w->color;
+
         delwin(w->window);
 
         w->type = WINDOW_HSPLIT;
-        w->left = window_new(w, w->x, w->y, leftwidth, w->height);
-        w->right = window_new(w, w->x + leftwidth + 1, w->y, rightwidth, w->height);
+        w->left = window_new(w, w->x, w->y, leftwidth, w->height, color);
+        w->right = window_new(w, w->x + leftwidth, w->y, rightwidth, w->height, colors_next(color));
 
         w->left->id = id;
         w->left->buffer = b;
+        w->left->color = color;
 
         w->right->buffer = buffer;
-
-        w->window = newwin(w->height, 1, w->y, w->x + leftwidth);
-        fixline(w);
 
         refreshdimensions(w->left);
         refreshdimensions(w->right);
@@ -429,11 +413,6 @@ window_delete(struct window *w)
         struct window *parent = w->parent;
         struct window *sibling = WINDOW_SIBLING(w);
 
-        /* clear the dividing line and delete its window */
-        werase(parent->window);
-        wnoutrefresh(parent->window);
-        delwin(parent->window);
-
         parent->type = sibling->type;
 
         if (sibling->type == WINDOW_WINDOW) {
@@ -448,7 +427,6 @@ window_delete(struct window *w)
                 parent->one->parent = parent;
                 parent->two->parent = parent;
                 fixtree(parent);
-                fixline(parent);
         }
 
         refreshdimensions(parent);
@@ -476,57 +454,4 @@ window_search(struct window *w, int id)
         }
 
         return r;
-}
-
-TEST(create)
-{
-        struct window *w = window_new(NULL, 0, 0, 20, 20);
-        claim(w->type == WINDOW_WINDOW);
-        claim(w->buffer == NULL);
-}
-
-TEST(vsplit)
-{
-        struct window *w = window_new(NULL, 0, 0, 20, 20);
-        window_vsplit(w, NULL);
-
-        claim(w->type == WINDOW_VSPLIT);
-        claim(w->height == 20);
-
-        claim(w->top != NULL);
-        claim(w->bot != NULL);
-
-        claim(w->top->height == 10);
-        claim(w->bot->height == 9);
-
-        claim(w->bot->y == 11);
-}
-
-TEST(hsplit)
-{
-        struct window *w = window_new(NULL, 0, 0, 41, 20);
-        window_hsplit(w, NULL);
-
-        claim(w->type == WINDOW_HSPLIT);
-        claim(w->left != NULL);
-        claim(w->right != NULL);
-
-        claim(w->width == 41);
-        claim(w->left->width == 20);
-        claim(w->bot->width == 20);
-
-        claim(w->bot->x == 21);
-}
-
-TEST(delete)
-{
-        struct window *w = window_new(NULL, 0, 0, 41, 20);
-
-        window_hsplit(w, NULL);
-
-        window_delete(w->left);
-
-        claim(w->type == WINDOW_WINDOW);
-        claim(w->height == 20);
-        claim(w->width == 41);
 }

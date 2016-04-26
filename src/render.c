@@ -26,13 +26,11 @@
 inline static void
 drawstatus(struct editor const *e)
 {
-        move(e->root_window->height, 0);
-        bkgdset(A_REVERSE);
+        move(0, 0);
         attron(A_BOLD);
         addstr(e->status);
         clrtoeol();
         attroff(A_BOLD);
-        bkgdset(A_NORMAL);
         wnoutrefresh(stdscr);
 }
 
@@ -57,7 +55,6 @@ render_window(struct window *w)
         else
                 changed = true;
 
-        wbkgdset(w->window, COLOR_PAIR(3));
         werase(w->window);
 
         char const *src = getdata(b);
@@ -72,6 +69,8 @@ render_window(struct window *w)
                 mvwaddnstr(w->window, line, 0, src, bytes);
                 src += bytes;
         }
+
+        wnoutrefresh(w->window);
 
         *b->rb_changed = false;
 
@@ -98,9 +97,6 @@ draw(struct window *w)
                 changed = render_window(w);
                 break;
         }
-
-        if (changed)
-                wnoutrefresh(w->window);
 
         w->force_redraw = false;
 

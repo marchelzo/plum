@@ -16,8 +16,8 @@ struct window {
         int width;   // width in columns
         bool force_redraw;
         bool insert_mode;
+        int color;
         struct window *parent;
-        WINDOW *window;
         union {
                 struct {
                         struct window *left;
@@ -32,6 +32,7 @@ struct window {
                         struct window *two;
                 };
                 struct {
+                        WINDOW *window;
                         struct buffer *buffer;
                         struct { int x, y; } cursor;
                         unsigned id;
@@ -40,13 +41,7 @@ struct window {
 };
 
 struct window *
-window_new(
-        struct window *parent,
-        int x,
-        int y,
-        int width,
-        int height
-);
+window_root(int x, int y, int width, int height);
 
 void
 window_notify_dimensions(struct window const *w);

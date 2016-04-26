@@ -87,13 +87,6 @@ static int cols;
  */
 static struct location scroll = { 0, 0 };
 
-/*
- * Input events received from the parent process are read into this
- * buffer. Input events are either text events or key events, none
- * of which should exceed 64 bytes. We will see, though.
- */
-static char input_buffer[64];
-
  /* remove the ith pollfd struct from the list of pollfds. */
 inline static void
 rempollfd(int i)
@@ -315,17 +308,17 @@ handle_editor_event(int ev)
                 break;
         case EVT_TEXT_INPUT:
                 bytes = recvint(read_fd);
-                read(read_fd, input_buffer, bytes);
-                input_buffer[bytes] = '\0';
-                state_push_input(&state, input_buffer);
+                read(read_fd, buffer, bytes);
+                buffer[bytes] = '\0';
+                state_push_input(&state, buffer);
                 checkinput();
                 break;
         case EVT_KEY_INPUT:
                 bytes = recvint(read_fd);
-                read(read_fd, input_buffer, bytes);
-                input_buffer[bytes] = '\0';
+                read(read_fd, buffer, bytes);
+                buffer[bytes] = '\0';
 
-                if (strcmp(input_buffer, "C-j") == 0) {
+                if (strcmp(buffer, "C-j") == 0) {
                         char *line = buffer_current_line();
                         sprintf(buffer, "print(%s);", line);
                         tb_insert(&data, "\n", 1);
@@ -342,7 +335,7 @@ handle_editor_event(int ev)
                                 tb_insert(&data, "\n", 1);
                         }
                 } else {
-                        state_push_input(&state, input_buffer);
+                        state_push_input(&state, buffer);
                         checkinput();
                 }
                 break;
@@ -367,6 +360,12 @@ buffer_main(void)
          * with the read-end of main editor process's pipe.
          */
         addpollfd(read_fd);
+
+        /*
+         * Render twice so that both renderbuffers contain valid data.
+         */
+        render();
+        render();
 
         /*
          * The main loop of the buffer process. Wait for event notifications from the parent,
@@ -1146,10 +1145,9 @@ blog(char const *fmt, ...)
         va_list ap;
         va_start(ap, fmt);
 
-        static char logbuf[1024];
-        vsnprintf(logbuf, sizeof logbuf - 1, fmt, ap);
+        vsnprintf(buffer, sizeof buffer - 1, fmt, ap);
 
         va_end(ap);
 
-        buffer_log(logbuf);
+        buffer_log(buffer);
 }
