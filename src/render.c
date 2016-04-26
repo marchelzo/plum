@@ -108,11 +108,11 @@ render(struct editor *e)
 {
         static bool insert_mode = false;
 
+        drawstatus(e);
+
         if (!draw(e->root_window))
                 return;
 
-        drawstatus(e);
-        
         int y = e->current_window->cursor.y;
         int x = e->current_window->cursor.x;
         wmove(e->current_window->window, y, x);

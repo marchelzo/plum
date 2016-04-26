@@ -28,7 +28,7 @@ inline static struct buffer *
 newbuffer(struct editor *e)
 {
         struct buffer *b = alloc(sizeof *b);
-        *b = buffer_new(e->nextbufid++);
+        *b = buffer_new(e->nbufs++);
         vec_push(e->buffers, b);
         return b;
 }
@@ -244,7 +244,7 @@ current_buffer(struct editor const *e)
 void
 editor_init(struct editor *e, int lines, int cols)
 {
-        e->nextbufid = 0;
+        e->nbufs = 0;
         vec_init(e->buffers);
 
         e->root_window = window_root(0, 1, cols, lines - 1);

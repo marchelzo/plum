@@ -7,7 +7,7 @@
 #include "window.h"
 
 struct editor {
-        uintmax_t nextbufid;
+        int nbufs;
         vec(struct buffer *) buffers;
 
         struct buffer *console;

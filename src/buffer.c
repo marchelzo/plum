@@ -249,12 +249,15 @@ static void
 source_init_files(void)
 {
         char const *home = getenv("HOME");
-        char buffer[512];
+        if (home == NULL) {
+                blog("failed to source init files: HOME not in environment");
+                return;
+        }
 
         sprintf(buffer, "%s/.plum/plum/start.plum", home);
 
         if (!vm_execute_file(buffer)) {
-                LOG("error was: %s", vm_error());
+                LOG("error sourcing init files: %s", vm_error());
         }
 }
 
@@ -350,12 +353,6 @@ buffer_main(void)
         backgrounded = true;
 
         /*
-         * Initialize the VM instance for this process.
-         */
-        vm_init();
-        source_init_files();
-
-        /*
          * Initialize the list of file descriptiors that we should poll
          * with the read-end of main editor process's pipe.
          */
@@ -366,6 +363,12 @@ buffer_main(void)
          */
         render();
         render();
+
+        /*
+         * Initialize the VM instance for this process.
+         */
+        vm_init();
+        source_init_files();
 
         /*
          * The main loop of the buffer process. Wait for event notifications from the parent,

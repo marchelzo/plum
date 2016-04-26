@@ -82,7 +82,6 @@ int main(void)
         if (!colors_init())
                 panic("oh no! your terminal doesn't have sufficient color support!");
 
-        tickit_term_await_started_msec(term, 100);
         tickit_term_setctl_int(term, TICKIT_TERMCTL_CURSORVIS, 1);
 
         int lines, cols;
@@ -90,6 +89,7 @@ int main(void)
 
         struct editor e;
         editor_init(&e, lines, cols);
+        render(&e);
 
         tickit_term_bind_event(term, TICKIT_EV_KEY, 0, handle_term_input_event, &e);
 
@@ -97,9 +97,9 @@ int main(void)
 
         for (;;) {
                 while (!background) {
+                        render(&e);
                         tickit_term_input_wait_msec(term, 10);
                         editor_do_update(&e);
-                        render(&e);
                 }
                 while (background) {
                         editor_do_update(&e);

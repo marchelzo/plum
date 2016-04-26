@@ -14,7 +14,7 @@
                         flock(2, LOCK_UN) \
                 )
 #else
-#define LOG(...)
+#define LOG(...) ;
 #endif
 
 #endif
