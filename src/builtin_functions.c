@@ -221,3 +221,30 @@ builtin_read(value_vector *args)
                 return NIL;
         }
 }
+
+struct value
+builtin_getenv(value_vector *args)
+{
+        if (args->count != 1)
+                vm_panic("getenv() expects 1 argument but got: %zu", args->count);
+
+        struct value var = args->items[0];
+
+        if (var.type != VALUE_STRING)
+                vm_panic("non-string passed to getenv()");
+
+        char buffer[256];
+
+        if (var.bytes >= sizeof buffer)
+                vm_panic("argument to getenv() is too long: '%.10s..'", var.string);
+
+        memcpy(buffer, var.string, var.bytes);
+        buffer[var.bytes] = '\0';
+
+        char const *val = getenv(buffer);
+
+        if (val == NULL)
+                return NIL;
+        else
+                return STRING_NOGC(val, strlen(val));
+}

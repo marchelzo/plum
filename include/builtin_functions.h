@@ -27,4 +27,7 @@ builtin_min(value_vector *args);
 struct value
 builtin_read(value_vector *args);
 
+struct value
+builtin_getenv(value_vector *args);
+
 #endif

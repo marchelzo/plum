@@ -72,6 +72,7 @@ static struct {
         { .module = NULL,     .name = "bool",              .fn = builtin_bool                       },
         { .module = NULL,     .name = "min",               .fn = builtin_min                        },
         { .module = NULL,     .name = "max",               .fn = builtin_max                        },
+        { .module = NULL,     .name = "getenv",            .fn = builtin_getenv                     },
         { .module = "buffer", .name = "mapNormal",         .fn = builtin_editor_map_normal          },
         { .module = "buffer", .name = "mapInsert",         .fn = builtin_editor_map_insert          },
         { .module = "buffer", .name = "insert",            .fn = builtin_editor_insert              },
