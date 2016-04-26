@@ -3,7 +3,7 @@
 
 #include "value.h"
 #include "log.h"
-#include "builtin_functions.h"
+#include "functions.h"
 #include "operators.h"
 #include "util.h"
 #include "vm.h"

@@ -16,10 +16,9 @@
 #include "test.h"
 #include "log.h"
 #include "operators.h"
-#include "builtin_functions.h"
-#include "editor_functions.h"
-#include "array_methods.h"
-#include "string_methods.h"
+#include "functions.h"
+#include "array.h"
+#include "str.h"
 #include "buffer.h"
 #include "tags.h"
 
@@ -65,7 +64,6 @@ static struct {
         struct value (*fn)(value_vector *);
 } builtins[] = {
         { .module = NULL,     .name = "print",             .fn = builtin_print                      },
-        { .module = NULL,     .name = "read",              .fn = builtin_read                       },
         { .module = NULL,     .name = "rand",              .fn = builtin_rand                       },
         { .module = NULL,     .name = "int",               .fn = builtin_int                        },
         { .module = NULL,     .name = "str",               .fn = builtin_str                        },

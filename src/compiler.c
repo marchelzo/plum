@@ -15,7 +15,7 @@
 #include "value.h"
 #include "ast.h"
 #include "object.h"
-#include "builtin_functions.h"
+#include "functions.h"
 #include "test.h"
 #include "lex.h"
 #include "parse.h"

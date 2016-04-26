@@ -21,7 +21,7 @@
 #include "state.h"
 #include "alloc.h"
 #include "buffer.h"
-#include "editor_functions.h"
+#include "functions.h"
 #include "tb.h"
 #include "location.h"
 #include "test.h"
