@@ -36,6 +36,9 @@ render_window(struct window *w)
         struct buffer *b = w->buffer;
         bool changed = false;
 
+        int x;
+        int y;
+
         pthread_mutex_lock(b->rb_mtx);
 
         if (!*b->rb_changed && !w->redraw)
@@ -46,6 +49,7 @@ render_window(struct window *w)
         werase(w->window);
 
         char const *src = getdata(b);
+        char const *start = src;
 
         src = readint(src, &w->cursor.y);
         src = readint(src, &w->cursor.x);
@@ -57,6 +61,12 @@ render_window(struct window *w)
                 mvwaddnstr(w->window, line, 0, src, bytes);
                 src += bytes;
         }
+
+        src = readint(src, &y);
+        src = readint(src, &x);
+
+        if (y != -1 && x != -1)
+                mvwchgat(w->window, y, x, 1, A_UNDERLINE, w->color, NULL);
 
         wnoutrefresh(w->window);
 

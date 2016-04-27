@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include <pcre.h>
+
 #include "vec.h"
 
 struct edit;

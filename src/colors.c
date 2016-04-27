@@ -3,10 +3,6 @@
 #include <stdbool.h>
 #include <curses.h>
 
-#define R(c) (((c) >> 16) & 0xFF)
-#define G(c) (((c) >>  8) & 0xFF)
-#define B(c) (((c) >>  0) & 0xFF)
-
 static struct {
         unsigned color;
         int used;
@@ -25,6 +21,19 @@ static struct {
 
 static int const nc = (sizeof colors / sizeof colors[0]) - 1;
 
+#define R(c) (((c) >> 16) & 0xFF)
+#define G(c) (((c) >>  8) & 0xFF)
+#define B(c) (((c) >>  0) & 0xFF)
+inline static void
+mkcolor(int n, unsigned color)
+{
+        float scale = 1000.0 / 256.0;
+        unsigned short r = round(R(color) * scale);
+        unsigned short g = round(G(color) * scale);
+        unsigned short b = round(B(color) * scale);
+        init_color(n, r, g, b);
+}
+
 bool
 colors_init(void)
 {
@@ -35,13 +44,8 @@ colors_init(void)
 
         init_color(0, 150, 150, 150);
 
-        float scale = 1000.0 / 256.0;
         for (int i = 0; i < nc; ++i) {
-                unsigned c = colors[i].color;
-                unsigned short r = round(R(c) * scale);
-                unsigned short g = round(G(c) * scale);
-                unsigned short b = round(B(c) * scale);
-                init_color(i + 1, r, g, b);
+                mkcolor(i + 1, colors[i].color);
                 init_pair(i + 1, 0, i + 1);
         }
 

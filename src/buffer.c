@@ -221,18 +221,21 @@ adjust_scroll(void)
  *
  * cursor line - int
  * cursor col  - int
- * insert mode - int (0 or 1)
+ * insert mode - char (0 or 1)
  *
- * # of line   - int
+ * # of lines  - int
  *
  * for each line:
  *      number of bytes (n) - int
  *      n bytes
+ *
+ * (line, col) of highlighted char - (int, int)
  */
 static void
 render(void)
 {
         char *dst = rb_current();
+        char *start = dst;
 
         struct location screenloc = screenlocation();
 
@@ -1142,6 +1145,12 @@ buffer_create(char const *prog, int n)
                 else
                         handle_editor_event(ev);
         }
+}
+
+int
+buffer_mode(void)
+{
+        return state.mode;
 }
 
 void

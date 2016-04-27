@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <assert.h>
+
 #include <limits.h>
 #include <time.h>
 
@@ -19,6 +19,7 @@
 #include "panic.h"
 #include "alloc.h"
 #include "utf8.h"
+#include "matchpair.h"
 #include "vm.h"
 
 #define RIGHT(s) ((s)->right + (s)->capacity - (s)->rightcount)
@@ -624,13 +625,13 @@ tb_size(struct tb const *s)
 void
 tb_draw(struct tb const *s, char *out, int line, int col, int lines, int cols)
 {
-        char const *lptr = getlineptr(s, line);
+        char const *start = getlineptr(s, line);
+        char const *lptr = start;
+
+        struct location match = { -1, -1 };
 
         int drawing = min(lines, tb_lines(s) - line);
-        memcpy(out, &drawing, sizeof (int));
-        out += sizeof (int);
-
-        LOG("rendering %d lines", drawing);
+        out = writeint(out, drawing);
 
         /*
          * First draw all of the lines before the line the cursor is on.
@@ -648,14 +649,15 @@ tb_draw(struct tb const *s, char *out, int line, int col, int lines, int cols)
                 char const *r = RIGHT(s);
                 int moved = 0;
 
-                while (moved < s->rightcount && *r != '\n') {
+                while (moved < s->rightcount && *r != '\n')
                         s->left[s->leftcount + moved++] = *r++;
-                }
 
                 out = utf8_copy_cols(lptr, s->left + s->leftcount - lptr + moved, out, col, cols);
 
-                if (s->line == s->lines || moved == s->rightcount)
-                        return;
+                if (s->line == s->lines || moved == s->rightcount) {
+                        lptr = r + s->rightcount;
+                        goto Match;
+                }
 
                 lptr = r + 1;
         }
@@ -663,15 +665,24 @@ tb_draw(struct tb const *s, char *out, int line, int col, int lines, int cols)
         /*
          * Finally draw all of the lines after the line the cursor is on.
          */
-        int maxline = min(line + lines, s->lines);
+        int maxline = min(line + lines - 1, s->lines);
+        char const *end = s->right + s->capacity;
         for (int i = s->line; i < maxline; ++i) {
                 out = utf8_copy_cols(lptr, s->right + s->capacity - lptr, out, col, cols);
-                if (i + 1 < maxline) {
-                        while (*lptr != '\n')
-                                ++lptr;
+                while (lptr < end && *lptr != '\n')
                         ++lptr;
-                }
+                if (*lptr == '\n')
+                        ++lptr;
         }
+
+Match:
+        /* If we're on a pair character, e.g., ( ) [ ] { }, try to find its match. */
+        match = matchpair(s, start, lptr, s->line - line, s->column - col);
+        if (match.col < col || match.col >= col + cols)
+                match = (struct location){ -1, -1 };
+        
+        out = writeint(out, match.line);
+        out = writeint(out, match.col);
 }
 
 
