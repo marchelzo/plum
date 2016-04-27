@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
+#include <inttypes.h>
 #include <stdbool.h>
 
 #define writeint(mem, val) \

@@ -10,7 +10,7 @@
 #include <sys/stat.h>
 
 #include <sys/mman.h>
-#ifndef MAP_ANONYMOUS /* OS X does not define MAP_ANONYMOUS, but MAP_ANON is deprecated on linux */
+#ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
@@ -243,6 +243,8 @@ render(void)
         tb_draw(&data, dst, scroll.line, scroll.col, lines, cols);
 
         rb_swap();
+
+        evt_send(write_fd, EVT_RENDER);
 }
 
 static void
@@ -306,17 +308,12 @@ handle_editor_event(int ev)
                 bytes = recvint(read_fd);
                 read(read_fd, smallbuf, bytes);
                 snprintf(buffer, sizeof buffer - 1, "import %.*s\n", bytes, smallbuf);
-                /* TODO: maybe check the return value of vm_execute here? */
-                vm_execute(buffer);
+                /* TODO: maybe do something useful with the return value of vm_execute here? */
+                if (!vm_execute(buffer)) {
+                        LOG("ERROR: %s", vm_error());
+                }
                 break;
-        case EVT_TEXT_INPUT:
-                bytes = recvint(read_fd);
-                read(read_fd, buffer, bytes);
-                buffer[bytes] = '\0';
-                state_push_input(&state, buffer);
-                checkinput();
-                break;
-        case EVT_KEY_INPUT:
+        case EVT_INPUT:
                 bytes = recvint(read_fd);
                 read(read_fd, buffer, bytes);
                 buffer[bytes] = '\0';
@@ -369,6 +366,11 @@ buffer_main(void)
          */
         vm_init();
         source_init_files();
+
+        /*
+         * Render again, in case sourcing the init file changed the buffer contents.
+         */
+        render();
 
         /*
          * The main loop of the buffer process. Wait for event notifications from the parent,
@@ -526,12 +528,6 @@ buffer_new(unsigned id)
 
                 // wait for the child to lock the renderbuffer mutex
                 assert(evt_recv(c2p[0]) == EVT_CHILD_LOCKED_MUTEX);
-
-                /*
-                 * Now we go into non-blocking mode, because the only time we will read
-                 * from this pipe is when polling for input events in the main editor loop.
-                 */
-                fcntl(c2p[0], F_SETFL, O_NONBLOCK);
 
                 return (struct buffer) {
                         .id  = id,
@@ -1110,6 +1106,12 @@ int
 buffer_id(void)
 {
         return bufid;
+}
+
+void
+buffer_cycle_window_color(void)
+{
+        evt_send(write_fd, EVT_WINDOW_CYCLE_COLOR);
 }
 
 /*

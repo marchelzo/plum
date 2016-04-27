@@ -255,6 +255,9 @@ int
 buffer_create(char const *prog, int n);
 
 void
+buffer_cycle_window_color(void);
+
+void
 blog(char const *fmt, ...);
 
 #endif

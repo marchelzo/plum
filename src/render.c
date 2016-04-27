@@ -4,7 +4,6 @@
 #include <string.h>
 #include <stdnoreturn.h>
 #include <assert.h>
-#include <tickit.h>
 #include <ncurses.h>
 
 #include <sys/stat.h>
@@ -23,17 +22,6 @@
 #include "window.h"
 #include "log.h"
 
-inline static void
-drawstatus(struct editor const *e)
-{
-        move(0, 0);
-        attron(A_BOLD);
-        addstr(e->status);
-        clrtoeol();
-        attroff(A_BOLD);
-        wnoutrefresh(stdscr);
-}
-
 inline static char *
 getdata(struct buffer *b)
 {
@@ -50,7 +38,7 @@ render_window(struct window *w)
 
         pthread_mutex_lock(b->rb_mtx);
 
-        if (!*b->rb_changed && !w->force_redraw)
+        if (!*b->rb_changed && !w->redraw)
                 goto done;
         else
                 changed = true;
@@ -98,7 +86,7 @@ draw(struct window *w)
                 break;
         }
 
-        w->force_redraw = false;
+        w->redraw = false;
 
         return changed;
 }
@@ -108,7 +96,8 @@ render(struct editor *e)
 {
         static bool insert_mode = false;
 
-        drawstatus(e);
+        if (e->background)
+                return;
 
         if (!draw(e->root_window))
                 return;

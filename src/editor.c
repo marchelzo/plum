@@ -2,6 +2,7 @@
 #include <signal.h>
 
 #include <ncurses.h>
+#include <poll.h>
 
 #include "editor.h"
 #include "buffer.h"
@@ -9,6 +10,8 @@
 #include "protocol.h"
 #include "window.h"
 #include "config.h"
+#include "render.h"
+#include "term.h"
 #include "log.h"
 
 inline static void
@@ -28,8 +31,12 @@ inline static struct buffer *
 newbuffer(struct editor *e)
 {
         struct buffer *b = alloc(sizeof *b);
+
         *b = buffer_new(e->nbufs++);
         vec_push(e->buffers, b);
+
+        vec_push(e->pollfds, ((struct pollfd){ .fd = b->read_fd, .events = POLLIN }));
+
         return b;
 }
 
@@ -69,6 +76,30 @@ findbuffer(struct editor *e, unsigned id)
 }
 
 /*
+ * Binary search for a buffer given a buffer fd.
+ */
+static struct buffer *
+findbyfd(struct editor *e, int fd)
+{
+        int lo = 0;
+        int hi = vec_len(e->buffers) - 1;
+
+        while (lo <= hi) {
+                int mid = lo/2 + hi/2 + (hi & lo & 1);
+                struct buffer *b = *vec_get(e->buffers, mid);
+                if (b->read_fd > fd) {
+                        hi = mid - 1;
+                } else if (b->read_fd < fd) {
+                        lo = mid + 1;
+                } else {
+                        return b;
+                }
+        }
+
+        return NULL;
+}
+
+/*
  * Handle an event received from a buffer.
  */
 static void
@@ -86,6 +117,9 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
         void (*split)(struct window *, struct buffer *) = NULL;
 
         switch (c) {
+        case EVT_RENDER:
+                render(e);
+                break;
         case EVT_GROW_X:
                 amount = recvint(b->read_fd);
                 window_grow_x(b->window, amount);
@@ -117,7 +151,7 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                         break;
 
                 e->current_window = window;
-                window->force_redraw = true;
+                window->redraw = true;
 
                 break;
         case EVT_GOTO_WINDOW:
@@ -127,6 +161,10 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                         if (w != NULL)
                                 e->current_window = w;
                 }
+                break;
+        case EVT_WINDOW_CYCLE_COLOR:
+                if (b->window != NULL)
+                        window_cycle_color(b->window);
                 break;
         case EVT_HSPLIT:
                 split = window_hsplit;
@@ -169,10 +207,13 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                 break;
         case EVT_STATUS_MESSAGE:
                 bytes = recvint(b->read_fd);
-                /* TODO: do something reasonable if bytes >= sizeof e->status */
-                read(b->read_fd, e->status, bytes);
-                e->status[bytes] = '\0';
-                e->status_timeout = 0;
+                /* TODO: do something reasonable if bytes is big */
+                read(b->read_fd, buf, bytes);
+                attron(A_BOLD);
+                mvaddnstr(0, 0, buf, bytes);
+                clrtoeol();
+                attroff(A_BOLD);
+                wnoutrefresh(stdscr);
                 break;
         case EVT_SHOW_CONSOLE:
                 showconsole(e);
@@ -247,6 +288,9 @@ editor_init(struct editor *e, int lines, int cols)
         e->nbufs = 0;
         vec_init(e->buffers);
 
+        vec_init(e->pollfds);
+        vec_push(e->pollfds, ((struct pollfd){ .fd = 0, .events = POLLIN }));
+
         e->root_window = window_root(0, 1, cols, lines - 1);
         e->current_window = e->root_window;
 
@@ -257,8 +301,7 @@ editor_init(struct editor *e, int lines, int cols)
         e->current_window->buffer = b;
         window_notify_dimensions(e->current_window);
 
-        e->status[0] = '\0';
-        e->status_timeout = -1;
+        e->background = false;
 }
 
 /*
@@ -282,38 +325,15 @@ editor_destroy_all_buffers(struct editor *e)
         }
 }
 
-/*
- * Causes the editor pointed to by 'e' to receive and process the key event
- * described by the string 's' (s is returned to us by libtickit).
- */
 void
-editor_handle_key_input(struct editor *e, char const *s)
+editor_handle_input(struct editor *e, char const *s)
 {
         struct buffer *b = current_buffer(e);
         assert(b != NULL);
 
         int bytes = strlen(s);
 
-        evt_send(b->write_fd, EVT_KEY_INPUT);
-        sendint(b->write_fd, bytes);
-        write(b->write_fd, s, bytes);
-}
-
-/*
- * Causes the editor poitned to by 'e' to receive and process the text 's'.
- */
-void
-editor_handle_text_input(struct editor *e, char const *s)
-{
-        struct buffer *b = current_buffer(e);
-        assert(b != NULL);
-
-        int bytes = strlen(s);
-
-        /*
-         * Send the text to the child process associated with the current buffer.
-         */
-        evt_send(b->write_fd, EVT_TEXT_INPUT);
+        evt_send(b->write_fd, EVT_INPUT);
         sendint(b->write_fd, bytes);
         write(b->write_fd, s, bytes);
 }
@@ -322,21 +342,44 @@ editor_handle_text_input(struct editor *e, char const *s)
  * Check the pipe of each buffer process to see if any of them have
  * sent any data to us.
  */
-void
-editor_do_update(struct editor *e)
+inline static void
+update(struct editor *e)
 {
-        int n = vec_len(e->buffers);
+        int const n = e->pollfds.count;
 
-        buffer_event_code c;
-        for (int i = 0; i < n; ++i) {
-                while (read(vec_get(e->buffers, i)[0]->read_fd, &c, sizeof c) == 1)
-                        handle_event(e, c, *vec_get(e->buffers, i));
-                if (errno != EWOULDBLOCK)
-                        panic("read() failed: %s", strerror(errno));
-        }
+        poll(e->pollfds.items, n, -1);
 
-        if (e->status_timeout != -1 && ++e->status_timeout == STATUS_MESSAGE_TIMEOUT) {
-                e->status[0] = '\0';
-                e->status_timeout = -1;
+        if (e->pollfds.items[0].revents & POLLIN)
+                term_handle_input();
+
+        for (int i = 1; i < n; ++i) {
+                if (e->pollfds.items[i].revents & POLLIN) {
+                        int fd = e->pollfds.items[i].fd;
+                        handle_event(e, evt_recv(fd), findbyfd(e, fd));
+                }
         }
+}
+
+void
+editor_run(struct editor *e)
+{
+        for (;;)
+                update(e);
+}
+
+void
+editor_background(struct editor *e)
+{
+        e->background = true;
+        e->pollfds.items[0].events &= ~POLLIN;
+        e->pollfds.items[0].revents = 0;
+}
+
+void
+editor_foreground(struct editor *e)
+{
+        e->background = false;
+        e->pollfds.items[0].events |= POLLIN;
+        window_touch(e->root_window);
+        render(e);
 }

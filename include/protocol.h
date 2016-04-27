@@ -14,9 +14,9 @@ enum {
         EVT_CHILD_LOCKED_MUTEX,
         EVT_START_CONSOLE,
         EVT_WINDOW_DIMENSIONS,
+        EVT_RENDER,
         EVT_PARENT_SYNCED_BUFFER,
-        EVT_TEXT_INPUT,
-        EVT_KEY_INPUT,
+        EVT_INPUT,
         EVT_MESSAGE,
         EVT_BACKGROUNDED,
         EVT_NEW_BUFFER,
@@ -32,6 +32,7 @@ enum {
         EVT_WINDOW_LEFT,
         EVT_WINDOW_DOWN,
         EVT_WINDOW_UP,
+        EVT_WINDOW_CYCLE_COLOR,
         EVT_VM_ERROR,
         EVT_LOG,
         EVT_SHOW_CONSOLE,
@@ -51,9 +52,7 @@ evt_recv(int fd)
 {
         buffer_event_code code;
 
-        if (read(fd, &code, sizeof code) < 0) {
-                panic("read() failed: %s", strerror(errno));
-        }
+        while (read(fd, &code, sizeof code) != sizeof code);
 
         return code;
 }
@@ -68,7 +67,7 @@ static inline int
 recvint(int fd)
 {
         int val;
-        read(fd, &val, sizeof (int));
+        while (read(fd, &val, sizeof val) != sizeof val);
         return val;
 }
 

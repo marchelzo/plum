@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <assert.h>
 
 #include "protocol.h"
@@ -7,6 +8,7 @@
 #include "buffer.h"
 #include "log.h"
 #include "colors.h"
+#include "util.h"
 
 static int winid = 0;
 
@@ -56,21 +58,73 @@ refreshdimensions(struct window *w)
 
         }
 
-	w->force_redraw = true;
+	w->redraw = true;
 }
 
 inline static void
-reconstruct_curses_window(struct window *w)
+fixwin(struct window *w)
 {
-        delwin(w->window);
-        w->window = newwin(w->height, w->width, w->y, w->x);
-        wbkgdset(w->window, COLOR_PAIR(w->color));
+        wresize(w->window, w->height, w->width);
+        mvwin(w->window, w->y, w->x);
+}
+
+static void
+hbalance(struct window *w)
+{
+        switch (w->type) {
+        case WINDOW_VSPLIT:
+                w->one->width = w->width;
+                w->two->width = w->width;
+                w->one->x = w->x;
+                w->two->x = w->x;
+                break;
+        case WINDOW_HSPLIT:
+                w->one->width = (w->width / 2) + (w->width & 1);
+                w->two->width = w->width - w->one->width;
+                w->one->x = w->x;
+                w->two->x = w->x + w->one->width;
+                break;
+        case WINDOW_WINDOW:
+                fixwin(w);
+                refreshdimensions(w);
+                return;
+        }
+
+        hbalance(w->one);
+        hbalance(w->two);
+}
+
+static void
+vbalance(struct window *w)
+{
+        switch (w->type) {
+        case WINDOW_VSPLIT:
+                w->one->height = (w->height / 2) + (w->height & 1);
+                w->two->height = w->height - w->one->height;
+                w->one->y = w->y;
+                w->two->y = w->y + w->one->height;
+                break;
+        case WINDOW_HSPLIT:
+                w->one->height = w->height;
+                w->two->height = w->height;
+                w->one->y = w->y;
+                w->two->y = w->y;
+                break;
+        case WINDOW_WINDOW:
+                fixwin(w);
+                refreshdimensions(w);
+                return;
+        }
+
+        vbalance(w->top);
+        vbalance(w->bot);
 }
 
 static void
 fixtree(struct window *w)
 {
         int extra;
+
         switch (w->type) {
         case WINDOW_VSPLIT:
                 w->one->width = w->width;
@@ -95,39 +149,13 @@ fixtree(struct window *w)
                 w->two->x = w->x + w->one->width;
                 break;
         case WINDOW_WINDOW:
-                reconstruct_curses_window(w);
+                fixwin(w);
+                refreshdimensions(w);
                 return;
         }
 
         fixtree(w->one);
         fixtree(w->two);
-}
-
-static void
-propagate(struct window *w, int dx, int dy, int dw, int dh)
-{
-        w->x += dx;
-        w->y += dy;
-
-        w->width += dw;
-        w->height += dh;
-
-        w->force_redraw = true;
-
-        switch (w->type) {
-        case WINDOW_VSPLIT:
-                propagate(w->top, dx, dy, dw, dh);
-                propagate(w->bot, dx, dy, dw, dh);
-                return;
-        case WINDOW_HSPLIT:
-                propagate(w->left, dx, dy, dw, dh);
-                propagate(w->right, dx, dy, dw, dh);
-                return;
-        case WINDOW_WINDOW:
-                refreshdimensions(w);
-                reconstruct_curses_window(w);
-                return;
-        }
 }
 
 inline static void
@@ -168,7 +196,7 @@ window_new(
         w->y = y;
         w->width = width;
         w->height = height;
-        w->force_redraw = true;
+        w->redraw = true;
         w->insert_mode = false;
 
         return w;
@@ -286,51 +314,51 @@ window_down(struct window *w)
 void
 window_grow_y(struct window *w, int dy)
 {
-        assert(w != NULL);
-        assert(w->parent != NULL);
-
         struct window *p = w->parent;
 
-        if (p->type != WINDOW_VSPLIT) {
-                window_grow_y(p, dy);
-                return;
+        while (p != NULL && p->type != WINDOW_VSPLIT) {
+                w = p;
+                p = p->parent;
         }
 
-        if (w == p->top) {
-                // we are on top, so we don't need to translate
-                // our side of the .
-                propagate(w, 0, 0, 0, dy);
-                propagate(p->bot, 0, dy, 0, -dy);
-        } else {
-                // here we _do_ need to translate our side
-                propagate(w, 0, -dy, 0, dy);
-                propagate(p->top, 0, 0, 0, -dy);
-        }
+        if (p == NULL)
+                return;
+
+        w->height += dy;
+        WINDOW_SIBLING(w)->height -= dy;
+
+        if (w == p->top)
+                p->bot->y += dy;
+        else
+                w->y -= dy;
+
+        vbalance(p->top);
+        vbalance(p->bot);
 }
 
 void
 window_grow_x(struct window *w, int dx)
 {
-        assert(w != NULL);
-        assert(w->parent != NULL); // can't grow the root window
-
         struct window *p = w->parent;
 
-        if (p->type != WINDOW_HSPLIT) {
-                window_grow_x(p, dx);
-                return;
+        while (p != NULL && p->type != WINDOW_HSPLIT) {
+                w = p;
+                p = p->parent;
         }
 
-        if (w == p->left) {
-                // we are on the left, so we don't need to translate
-                // our side of the .
-                propagate(w, 0, 0, dx, 0);
-                propagate(p->right, dx, 0, -dx, 0);
-        } else {
-                // here we _do_ need to translate our side
-                propagate(w, -dx, 0, dx, 0);
-                propagate(p->left, 0, 0, -dx, 0);
-        }
+        if (p == NULL)
+                return;
+
+        w->width += dx;
+        WINDOW_SIBLING(w)->width -= dx;
+
+        if (w == p->left)
+                p->right->x += dx;
+        else
+                w->x -= dx;
+
+        hbalance(p->left);
+        hbalance(p->right);
 }
 
 void
@@ -372,7 +400,7 @@ window_vsplit(struct window *w, struct buffer *buffer)
         refreshdimensions(w->top);
         refreshdimensions(w->bot);
 
-        w->force_redraw = true;
+        w->redraw = true;
 }
 
 void
@@ -402,7 +430,7 @@ window_hsplit(struct window *w, struct buffer *buffer)
         refreshdimensions(w->left);
         refreshdimensions(w->right);
 
-        w->force_redraw = true;
+        w->redraw = true;
 }
 
 void
@@ -419,7 +447,7 @@ window_delete(struct window *w)
                 parent->buffer = sibling->buffer;
                 parent->id = sibling->id;
                 parent->window = sibling->window;
-                reconstruct_curses_window(parent);
+                fixwin(parent);
         } else {
                 parent->window = sibling->window;
                 parent->one = sibling->one;
@@ -454,4 +482,33 @@ window_search(struct window *w, int id)
         }
 
         return r;
+}
+
+void
+window_touch(struct window *w)
+{
+        switch (w->type) {
+        case WINDOW_HSPLIT:
+        case WINDOW_VSPLIT:
+                window_touch(w->one);
+                window_touch(w->two);
+        case WINDOW_WINDOW:
+                w->redraw = true;
+        }
+}
+
+void
+window_resize(struct window *w, int height, int width)
+{
+        w->height = height;
+        w->width = width;
+        fixtree(w);
+}
+
+void
+window_cycle_color(struct window *w)
+{
+        w->color = colors_next(w->color);
+        wbkgdset(w->window, COLOR_PAIR(w->color));
+        w->redraw = true;
 }

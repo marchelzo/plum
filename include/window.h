@@ -14,7 +14,7 @@ struct window {
         int x, y;    // top-left coords
         int height;  // height in rows
         int width;   // width in columns
-        bool force_redraw;
+        bool redraw;
         bool insert_mode;
         int color;
         struct window *parent;
@@ -90,5 +90,11 @@ window_delete(struct window *w);
 
 struct window *
 window_search(struct window *w, int id);
+
+void
+window_touch(struct window *w);
+
+void
+window_resize(struct window *w, int height, int width);
 
 #endif

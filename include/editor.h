@@ -2,6 +2,10 @@
 #define EDITOR_H_INCLUDED
 
 #include <stdint.h>
+#include <stdbool.h>
+
+#include <poll.h>
+
 #include "vec.h"
 #include "buffer.h"
 #include "window.h"
@@ -15,32 +19,27 @@ struct editor {
         struct window *root_window;
         struct window *current_window;
 
-        int status_timeout;
-        char status[1024];
+        vec(struct pollfd) pollfds;
+
+        bool background;
 };
 
 void
 editor_init(struct editor *e, int lines, int cols);
 
-unsigned
-editor_create_file_buffer(struct editor *e, char const *path);
-
-void
-editor_view_buffer(struct editor *e, struct window *w, unsigned buf_id);
-
-void
-editor_destroy_buffer(struct editor *e, unsigned buf_id);
-
 void
 editor_destroy_all_buffers(struct editor *e);
 
 void
-editor_handle_text_input(struct editor *e, char const *s);
+editor_handle_input(struct editor *e, char const *s);
 
 void
-editor_handle_key_input(struct editor *e, char const *s);
+editor_foreground(struct editor *e);
 
 void
-editor_do_update(struct editor *e);
+editor_background(struct editor *e);
+
+void
+editor_run(struct editor *e);
 
 #endif

@@ -128,6 +128,7 @@ static struct {
         { .module = "window", .name = "up",                .fn = builtin_editor_window_up           },
         { .module = "window", .name = "down",              .fn = builtin_editor_window_down         },
         { .module = "window", .name = "goto",              .fn = builtin_editor_goto_window         },
+        { .module = "window", .name = "cycleColor",        .fn = builtin_editor_window_cycle_color  },
         { .module = "editor", .name = "log",               .fn = builtin_editor_log                 },
         { .module = "editor", .name = "echo",              .fn = builtin_editor_echo                },
         { .module = "editor", .name = "showConsole",       .fn = builtin_editor_show_console        },

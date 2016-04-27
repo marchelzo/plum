@@ -149,7 +149,6 @@ utf8_copy_cols(char const * restrict str, int len, char * restrict out, int skip
                 len -= bytes;
         }
 
-        LOG("line has %d bytes", n);
         memcpy(bp, &n, sizeof (int));
 
         return out;

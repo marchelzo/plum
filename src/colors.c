@@ -9,7 +9,7 @@
 
 static struct {
         unsigned color;
-        int using;
+        int used;
 } colors[] = {
         { 0xF9F9F9, 0       },
         { 0xFCCECE, 0       },
@@ -51,7 +51,7 @@ colors_init(void)
 void
 colors_free(int c)
 {
-        --colors[c - 1].using;
+        --colors[c - 1].used;
 }
 
 int
@@ -60,10 +60,10 @@ colors_next(int avoid)
         int c = nc;
 
         for (int i = 0; i < nc; ++i)
-                if (colors[i].using < colors[c].using && i != avoid)
+                if (colors[i].used < colors[c].used && i != avoid)
                         c = i;
 
-        ++colors[c].using;
+        ++colors[c].used;
 
         return c + 1;
 }

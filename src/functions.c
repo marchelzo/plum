@@ -1172,3 +1172,11 @@ builtin_editor_buffer_clear(value_vector *args)
         buffer_clear();
         return NIL;
 }
+
+struct value
+builtin_editor_window_cycle_color(value_vector *args)
+{
+        ASSERT_ARGC("window::cycleColor()", 0);
+        buffer_cycle_window_color();
+        return NIL;
+}
