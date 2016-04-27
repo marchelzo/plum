@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <signal.h>
+#include <unistd.h>
 
 #include <ncurses.h>
 #include <poll.h>
@@ -214,6 +215,7 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                 clrtoeol();
                 attroff(A_BOLD);
                 wnoutrefresh(stdscr);
+                window_touch(e->root_window);
                 break;
         case EVT_SHOW_CONSOLE:
                 showconsole(e);
@@ -363,8 +365,7 @@ update(struct editor *e)
 void
 editor_run(struct editor *e)
 {
-        for (;;)
-                update(e);
+        for (;;) update(e);
 }
 
 void

@@ -97,4 +97,7 @@ window_touch(struct window *w);
 void
 window_resize(struct window *w, int height, int width);
 
+void
+window_cycle_color(struct window *w);
+
 #endif
