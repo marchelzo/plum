@@ -36,50 +36,6 @@ arrays_equal(struct value const *v1, struct value const *v2)
         return true;
 }
 
-inline static bool
-bytes_equal(char const *s1, char const *s2, int count)
-{
-        register int n = (count + 31) / 32;
-        switch (count % 32) {
-                do {
-                case 0:  if (*s1++ != *s2++) return false;
-                case 31: if (*s1++ != *s2++) return false;
-                case 30: if (*s1++ != *s2++) return false;
-                case 29: if (*s1++ != *s2++) return false;
-                case 28: if (*s1++ != *s2++) return false;
-                case 27: if (*s1++ != *s2++) return false;
-                case 26: if (*s1++ != *s2++) return false;
-                case 25: if (*s1++ != *s2++) return false;
-                case 24: if (*s1++ != *s2++) return false;
-                case 23: if (*s1++ != *s2++) return false;
-                case 22: if (*s1++ != *s2++) return false;
-                case 21: if (*s1++ != *s2++) return false;
-                case 20: if (*s1++ != *s2++) return false;
-                case 19: if (*s1++ != *s2++) return false;
-                case 18: if (*s1++ != *s2++) return false;
-                case 17: if (*s1++ != *s2++) return false;
-                case 16: if (*s1++ != *s2++) return false;
-                case 15: if (*s1++ != *s2++) return false;
-                case 14: if (*s1++ != *s2++) return false;
-                case 13: if (*s1++ != *s2++) return false;
-                case 12: if (*s1++ != *s2++) return false;
-                case 11: if (*s1++ != *s2++) return false;
-                case 10: if (*s1++ != *s2++) return false;
-                case 9:  if (*s1++ != *s2++) return false;
-                case 8:  if (*s1++ != *s2++) return false;
-                case 7:  if (*s1++ != *s2++) return false;
-                case 6:  if (*s1++ != *s2++) return false;
-                case 5:  if (*s1++ != *s2++) return false;
-                case 4:  if (*s1++ != *s2++) return false;
-                case 3:  if (*s1++ != *s2++) return false;
-                case 2:  if (*s1++ != *s2++) return false;
-                case 1:  if (*s1++ != *s2++) return false;
-                } while (--n > 0);
-        }
-
-        return true;
-}
-
 // These hash functions are based on djb's djb2 hash function, copied from http://www.cse.yorku.ca/~oz/hash.html
 
 static unsigned long
@@ -428,7 +384,7 @@ value_test_equality(struct value const *v1, struct value const *v2)
         case VALUE_REAL:             if (v1->real != v2->real)                                                      return false; break;
         case VALUE_BOOLEAN:          if (v1->boolean != v2->boolean)                                                return false; break;
         case VALUE_INTEGER:          if (v1->integer != v2->integer)                                                return false; break;
-        case VALUE_STRING:           if (v1->bytes != v2->bytes || !bytes_equal(v1->string, v2->string, v1->bytes)) return false; break;
+        case VALUE_STRING:           if (v1->bytes != v2->bytes || memcmp(v1->string, v2->string, v1->bytes) != 0)  return false; break;
         case VALUE_ARRAY:            if (!arrays_equal(v1, v2))                                                     return false; break;
         case VALUE_REGEX:            if (v1->regex != v2->regex)                                                    return false; break;
         case VALUE_FUNCTION:         if (v1->code != v2->code)                                                      return false; break;

@@ -94,13 +94,11 @@ string_slice(struct value *string, value_vector *args)
 
         stringcount(s, string->bytes, -1);
 
-        if (i < 0) {
+        if (i < 0)
                 i += outpos.graphemes;
-        }
                 
-        if (i < 0 || i >= outpos.graphemes) {
+        if (i < 0 || i > outpos.graphemes)
                 return NIL;
-        }
         
         stringcount(s, string->bytes, i);
 
