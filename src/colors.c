@@ -8,10 +8,10 @@ static struct {
         int used;
 } colors[] = {
         { 0xF9F9F9, 0       },
-        { 0xFCCECE, 0       },
         { 0xFCFDCD, 0       },
-        { 0xCEF4FC, 0       },
         { 0xFDE6F6, 0       },
+        { 0xCEF4FC, 0       },
+        { 0xFCCECE, 0       },
         { 0xF6F5EE, 0       },
         { 0xBBF7BA, 0       },
         { 0xFFF3CC, 0       },

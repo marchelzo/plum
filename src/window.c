@@ -452,6 +452,19 @@ window_search(struct window *w, int id)
 }
 
 void
+window_touch(struct window *w)
+{
+        switch (w->type) {
+        case WINDOW_HSPLIT:
+        case WINDOW_VSPLIT:
+                window_touch(w->one);
+                window_touch(w->two);
+        case WINDOW_WINDOW:
+                w->redraw = true;
+        }
+}
+
+void
 window_resize(struct window *w, int height, int width)
 {
         w->height = height;

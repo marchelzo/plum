@@ -1649,6 +1649,9 @@ emit_expression(struct expression const *e)
                 emit_expression(e->value);
                 emit_instr(INSTR_MUT_SUB);
                 break;
+        case EXPRESSION_LIST:
+                fail("list in invalid context");
+                break;
         }
 }
 
