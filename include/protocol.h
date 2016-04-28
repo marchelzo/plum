@@ -39,6 +39,7 @@ enum {
         EVT_STATUS_MESSAGE,
         EVT_WINDOW_ID,
         EVT_WINDOW_DELETE,
+        EVT_ERROR,
 };
 
 static inline void
@@ -52,9 +53,12 @@ evt_recv(int fd)
 {
         buffer_event_code code;
 
-        while (read(fd, &code, sizeof code) != sizeof code);
-
-        return code;
+Read:
+        switch (read(fd, &code, sizeof code)) {
+        case EINTR:       goto Read;
+        case sizeof code: return code;
+        default:          panic("read() failed: %s", strerror(errno));
+        }
 }
 
 static inline void

@@ -671,7 +671,7 @@ tb_draw(struct tb const *s, char *out, int line, int col, int lines, int cols)
                 out = utf8_copy_cols(lptr, s->right + s->capacity - lptr, out, col, cols);
                 while (lptr < end && *lptr != '\n')
                         ++lptr;
-                if (*lptr == '\n')
+                if (lptr != end)
                         ++lptr;
         }
 
