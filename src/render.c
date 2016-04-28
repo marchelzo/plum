@@ -42,14 +42,13 @@ render_window(struct window *w)
         pthread_mutex_lock(b->rb_mtx);
 
         if (!*b->rb_changed && !w->redraw)
-                goto done;
+                goto Done;
         else
                 changed = true;
 
         werase(w->window);
 
         char const *src = getdata(b);
-        char const *start = src;
 
         src = readint(src, &w->cursor.y);
         src = readint(src, &w->cursor.x);
@@ -72,7 +71,7 @@ render_window(struct window *w)
 
         *b->rb_changed = false;
 
-done:
+Done:
         pthread_mutex_unlock(b->rb_mtx);
         return changed;
 }
@@ -112,11 +111,6 @@ render(struct editor *e)
         if (!draw(e->root_window))
                 return;
 
-        int y = e->current_window->cursor.y;
-        int x = e->current_window->cursor.x;
-        wmove(e->current_window->window, y, x);
-        wnoutrefresh(e->current_window->window);
-
         if (insert_mode != e->current_window->insert_mode) {
                 if (e->current_window->insert_mode)
                         write(1, INSERT_BEGIN_STRING, sizeof INSERT_BEGIN_STRING - 1);
@@ -125,6 +119,14 @@ render(struct editor *e)
         }
 
         insert_mode = e->current_window->insert_mode;
+
+        wmove(
+                e->current_window->window,
+                e->current_window->cursor.y,
+                e->current_window->cursor.x
+        );
+
+        wnoutrefresh(e->current_window->window);
 
         doupdate();
 }

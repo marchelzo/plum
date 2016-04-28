@@ -21,6 +21,7 @@ struct editor {
 
         vec(struct pollfd) pollfds;
 
+        bool render;
         bool background;
 };
 

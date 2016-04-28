@@ -48,7 +48,7 @@ showconsole(struct editor *e)
                 deletewindow(e, e->console->window);
 
         struct window *w = e->current_window;
-        window_vsplit(w, e->console);
+        window_vsplit(w, e->console, 3);
         e->current_window = w->top;
 }
 
@@ -115,11 +115,11 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
         static int id;
         static int size;
 
-        void (*split)(struct window *, struct buffer *) = NULL;
+        void (*split)(struct window *, struct buffer *, int);
 
         switch (c) {
         case EVT_RENDER:
-                render(e);
+                ++e->render;
                 break;
         case EVT_GROW_X:
                 amount = recvint(b->read_fd);
@@ -153,25 +153,30 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
 
                 e->current_window = window;
                 window->redraw = true;
+                ++e->render;
 
                 break;
         case EVT_GOTO_WINDOW:
                 id = recvint(b->read_fd);
                 if (b->window == e->current_window) {
                         struct window *w = window_search(e->root_window, id);
-                        if (w != NULL)
+                        if (w != NULL) {
                                 e->current_window = w;
+                                ++e->render;
+                        }
                 }
                 break;
         case EVT_WINDOW_CYCLE_COLOR:
-                if (b->window != NULL)
+                if (b->window != NULL) {
                         window_cycle_color(b->window);
+                        ++e->render;
+                }
                 break;
         case EVT_HSPLIT:
                 split = window_hsplit;
+        if (0)
         case EVT_VSPLIT:
-                if (split == NULL)
-                        split = window_vsplit;
+                split = window_vsplit;
                 if (b->window != NULL) {
                         id = recvint(b->read_fd);
                         size = recvint(b->read_fd);
@@ -181,20 +186,13 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                                 evt_send(b->write_fd, EVT_WINDOW_ID);
                                 sendint(b->write_fd, -1);
                         } else {
-                                split(b->window, buffer);
+                                split(b->window, buffer, size);
                                 e->current_window = b->window;
                                 evt_send(b->write_fd, EVT_WINDOW_ID);
                                 sendint(b->write_fd, WINDOW_SIBLING(b->window)->id);
-
-                                if (size == -1)
-                                        break;
-
-                                if (split == window_vsplit)
-                                        window_set_height(WINDOW_SIBLING(b->window), size);
-                                else if (split == window_hsplit)
-                                        window_set_width(WINDOW_SIBLING(b->window), size);
                         }
                 }
+                ++e->render;
                 break;
         case EVT_WINDOW_ID:
                 evt_send(b->write_fd, EVT_WINDOW_ID);
@@ -205,6 +203,7 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                 break;
         case EVT_WINDOW_DELETE:
                 deletewindow(e, b->window);
+                ++e->render;
                 break;
         case EVT_STATUS_MESSAGE:
                 bytes = recvint(b->read_fd);
@@ -216,9 +215,11 @@ handle_event(struct editor *e, buffer_event_code c, struct buffer *b)
                 attroff(A_BOLD);
                 wnoutrefresh(stdscr);
                 window_touch(e->root_window);
+                ++e->render;
                 break;
         case EVT_SHOW_CONSOLE:
                 showconsole(e);
+                ++e->render;
                 break;
         case EVT_MESSAGE:
                 id = recvint(b->read_fd);
@@ -303,6 +304,7 @@ editor_init(struct editor *e, int lines, int cols)
         e->current_window->buffer = b;
         window_notify_dimensions(e->current_window);
 
+        e->background = true;
         e->background = false;
 }
 
@@ -340,6 +342,23 @@ editor_handle_input(struct editor *e, char const *s)
         write(b->write_fd, s, bytes);
 }
 
+void
+editor_background(struct editor *e)
+{
+        e->background = true;
+        e->pollfds.items[0].events &= ~POLLIN;
+        e->pollfds.items[0].revents = 0;
+}
+
+void
+editor_foreground(struct editor *e)
+{
+        e->background = false;
+        e->pollfds.items[0].events |= POLLIN;
+        window_touch(e->root_window);
+        render(e);
+}
+
 /*
  * Check the pipe of each buffer process to see if any of them have
  * sent any data to us.
@@ -365,22 +384,10 @@ update(struct editor *e)
 void
 editor_run(struct editor *e)
 {
-        for (;;) update(e);
-}
-
-void
-editor_background(struct editor *e)
-{
-        e->background = true;
-        e->pollfds.items[0].events &= ~POLLIN;
-        e->pollfds.items[0].revents = 0;
-}
-
-void
-editor_foreground(struct editor *e)
-{
-        e->background = false;
-        e->pollfds.items[0].events |= POLLIN;
-        window_touch(e->root_window);
-        render(e);
+        for (;;) {
+                update(e);
+                if (e->render)
+                        render(e);
+                e->render = false;
+        }
 }

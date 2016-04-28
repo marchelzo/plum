@@ -80,10 +80,10 @@ void
 window_set_width(struct window *w, int width);
 
 void
-window_vsplit(struct window *w, struct buffer *b);
+window_vsplit(struct window *w, struct buffer *b, int size);
 
 void
-window_hsplit(struct window *w, struct buffer *b);
+window_hsplit(struct window *w, struct buffer *b, int size);
 
 void
 window_delete(struct window *w);

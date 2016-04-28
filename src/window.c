@@ -334,12 +334,12 @@ window_set_width(struct window *w, int width)
 }
 
 void
-window_vsplit(struct window *w, struct buffer *buffer)
+window_vsplit(struct window *w, struct buffer *buffer, int size)
 {
         assert(w->type == WINDOW_WINDOW);
 
-        int topheight = w->height / 2;
-        int botheight = w->height - topheight;
+        int bh = (size == -1) ? (w->height / 2) : min(size, w->height);
+        int th = w->height - bh;
 
         unsigned id = w->id;
         int color = w->color;
@@ -348,8 +348,8 @@ window_vsplit(struct window *w, struct buffer *buffer)
         delwin(w->window);
 
         w->type = WINDOW_VSPLIT;
-        w->top = window_new(w, w->x, w->y, w->width, topheight, color);
-        w->bot = window_new(w, w->x, w->y + topheight, w->width, botheight, colors_next(color));
+        w->top = window_new(w, w->x, w->y, w->width, th, color);
+        w->bot = window_new(w, w->x, w->y + th, w->width, bh, colors_next(color));
 
         w->top->id = id;
         w->top->buffer = b;
@@ -364,12 +364,12 @@ window_vsplit(struct window *w, struct buffer *buffer)
 }
 
 void
-window_hsplit(struct window *w, struct buffer *buffer)
+window_hsplit(struct window *w, struct buffer *buffer, int size)
 {
         assert(w->type == WINDOW_WINDOW);
 
-        int leftwidth = w->width / 2;
-        int rightwidth = w->width - leftwidth;
+        int rw = (size == -1) ? (w->width / 2) : min(size, w->width);
+        int lw = w->width - rw;
 
         unsigned id = w->id;
         struct buffer *b = w->buffer;
@@ -378,8 +378,8 @@ window_hsplit(struct window *w, struct buffer *buffer)
         delwin(w->window);
 
         w->type = WINDOW_HSPLIT;
-        w->left = window_new(w, w->x, w->y, leftwidth, w->height, color);
-        w->right = window_new(w, w->x + leftwidth, w->y, rightwidth, w->height, colors_next(color));
+        w->left = window_new(w, w->x, w->y, lw, w->height, color);
+        w->right = window_new(w, w->x + lw, w->y, rw, w->height, colors_next(color));
 
         w->left->id = id;
         w->left->buffer = b;

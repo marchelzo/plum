@@ -937,8 +937,7 @@ builtin_editor_write_file(value_vector *args)
         ASSERT_ARGC_2("buffer::writeFile()", 0, 1);
 
         if (args->count == 0) {
-                if (!buffer_save_file())
-                        blog("There is no file associated with this buffer");
+                buffer_save_file();
                 return NIL;
         }
 

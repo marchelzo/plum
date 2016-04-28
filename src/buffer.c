@@ -213,6 +213,32 @@ adjust_scroll(void)
         }
 }
 
+static void
+echo(char const *fmt, ...)
+{
+        int n;
+        va_list args;
+
+        va_start(args, fmt);
+        n = vsnprintf(buffer, cols, fmt, args);
+        va_end(args);
+
+        evt_send(write_fd, EVT_STATUS_MESSAGE);
+        sendint(write_fd, n);
+        write(write_fd, buffer, n);
+}
+
+static void
+setfile(char const *path, int n)
+{
+        getcwd(fullpath, sizeof fullpath);
+        memcpy(shortpath, path, n);
+
+        int pwdlen = strlen(fullpath);
+        fullpath[pwdlen++] = '/';
+        memcpy(fullpath + pwdlen, path, n);
+}
+
 /*
  * Write all of the data necessary to display the contents of this buffer into the shared memory, so
  * that the parent process can read it and update the display.
@@ -235,7 +261,6 @@ static void
 render(void)
 {
         char *dst = rb_current();
-        char *start = dst;
 
         struct location screenloc = screenlocation();
 
@@ -255,7 +280,7 @@ source_init_files(void)
 {
         char const *home = getenv("HOME");
         if (home == NULL) {
-                blog("failed to source init files: HOME not in environment");
+                echo("failed to source init files: HOME not in environment");
                 return;
         }
 
@@ -895,7 +920,7 @@ buffer_spawn(char *path, struct value_array *args, struct value on_output, struc
         int fds[2];
 
         if (!sp_tryspawn(path, args, on_output, on_exit, fds)) {
-                blog("Failed to spawn process '%s': %s", path, strerror(errno));
+                echo("Failed to spawn process '%s': %s", path, strerror(errno));
                 free(path);
                 return -1;
         }
@@ -958,7 +983,7 @@ void
 buffer_write_file(char const *path, int n)
 {
         if (n >= sizeof buffer) {
-                blog("Filename '%.10s...' is too long. Not writing.", path);
+                echo("Filename '%.10s...' is too long. Not writing.", path);
                 return;
         }
 
@@ -967,20 +992,22 @@ buffer_write_file(char const *path, int n)
 
         int fd = open(buffer, O_WRONLY | O_TRUNC | O_CREAT, 0666);
         if (fd == -1) {
-                blog("Failed to open %s for writing: %s", buffer, strerror(errno));
+                echo("Failed to open %s for writing: %s", buffer, strerror(errno));
                 return;
         }
 
         tb_write(&data, fd);
-
         close(fd);
+
+        setfile(path, n);
+        echo("Wrote %.*s (%d bytes)", n, path, tb_size(&data));
 }
 
 void
 buffer_load_file(char const *path, int n)
 {
         if (n >= sizeof buffer) {
-                blog("Filename '%.10s...' is too long. Not reading.", path);
+                echo("Filename '%.10s...' is too long. Not reading.", path);
                 return;
         }
 
@@ -989,7 +1016,7 @@ buffer_load_file(char const *path, int n)
 
         int fd = open(buffer, O_RDONLY | O_CREAT, 0666);
         if (fd == -1) {
-                blog("Failed to open %s for reading: %s", buffer, strerror(errno));
+                echo("Failed to open %s for reading: %s", buffer, strerror(errno));
         }
 
         tb_murder(&data);
@@ -1001,19 +1028,16 @@ buffer_load_file(char const *path, int n)
         tb_start_history(&data);
         tb_start_new_edit(&data);
 
-        getcwd(fullpath, sizeof fullpath);
-        memcpy(shortpath, path, n);
-
-        int pwdlen = strlen(fullpath);
-        fullpath[pwdlen++] = '/';
-        memcpy(fullpath + pwdlen, path, n);
+        setfile(path, n);
 }
 
-bool
+void
 buffer_save_file(void)
 {
-        /* TODO: implement this */
-        return true;
+        if (fullpath[0] == '\0')
+                echo("No file to save...");
+        else
+                buffer_write_file(fullpath, strlen(fullpath));
 }
 
 char const *

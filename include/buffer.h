@@ -206,7 +206,7 @@ buffer_wait_subprocess(int fd);
 bool
 buffer_write_to_subprocess(int fd, char const *data, int n);
 
-bool
+void
 buffer_save_file(void);
 
 void
