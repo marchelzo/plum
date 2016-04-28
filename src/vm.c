@@ -68,6 +68,7 @@ static struct {
         { .module = NULL,     .name = "int",               .fn = builtin_int                           },
         { .module = NULL,     .name = "str",               .fn = builtin_str                           },
         { .module = NULL,     .name = "bool",              .fn = builtin_bool                          },
+        { .module = NULL,     .name = "regex",             .fn = builtin_regex                         },
         { .module = NULL,     .name = "min",               .fn = builtin_min                           },
         { .module = NULL,     .name = "max",               .fn = builtin_max                           },
         { .module = NULL,     .name = "getenv",            .fn = builtin_getenv                        },

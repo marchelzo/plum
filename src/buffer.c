@@ -1203,7 +1203,7 @@ buffer_write_to_proc(int p)
 
         tb_write(&data, p);
 
-        return 0;
+        return true;
 }
 
 void

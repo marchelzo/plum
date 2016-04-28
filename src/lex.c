@@ -102,7 +102,7 @@ mkregex(char const *pat, int flags)
 
         pcre_extra *extra = pcre_study(re, PCRE_STUDY_EXTRA_NEEDED | PCRE_STUDY_JIT_COMPILE, &err);
         if (extra == NULL) {
-                error("error studing regular expression: %s", err);
+                error("error studying regular expression: %s", err);
         }
 
         return (struct token) {

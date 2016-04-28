@@ -19,6 +19,9 @@ struct value
 builtin_bool(value_vector *args);
 
 struct value
+builtin_regex(value_vector *args);
+
+struct value
 builtin_max(value_vector *args);
 
 struct value

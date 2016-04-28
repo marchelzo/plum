@@ -9,6 +9,9 @@
 #include "vm.h"
 #include "buffer.h"
 #include "log.h"
+#include "util.h"
+
+static char buffer[1024];
 
 #define ASSERT_ARGC(func, argc) \
         if (args->count != (argc)) { \
@@ -110,15 +113,12 @@ custom_base:
         s = args->items[0];
         b = args->items[1];
 
-        if (s.type != VALUE_STRING) {
-                vm_panic("non-string passed as first of two arguments to the builtin int function");
-        }
-        if (b.type != VALUE_INTEGER) {
-                vm_panic("non-integer passed as second argument to the builtin int function");
-        }
-        if (b.integer < 0 || b.integer == 1 || b.integer > 36) {
-                vm_panic("invalid base passed to the builtin int function: expected 0 or 2..36, but got %d", (int) b.integer);
-        }
+        if (s.type != VALUE_STRING)
+                vm_panic("non-string passed as first of two arguments to int()");
+        if (b.type != VALUE_INTEGER)
+                vm_panic("non-integer passed as second argument to int()");
+        if (b.integer < 0 || b.integer == 1 || b.integer > 36)
+                vm_panic("invalid base passed to int(): expected 0 or 2..36, but got %d", (int) b.integer);
 
         base = b.integer;
         memcpy(nbuf, s.string, s.bytes);
@@ -176,10 +176,43 @@ builtin_bool(value_vector *args)
 }
 
 struct value
+builtin_regex(value_vector *args)
+{
+        ASSERT_ARGC("regex()", 1);
+
+        struct value pattern = args->items[0];
+
+        if (pattern.type == VALUE_REGEX)
+                return pattern;
+
+        if (pattern.type != VALUE_STRING)
+                vm_panic("non-string passed to regex()");
+
+        snprintf(buffer, sizeof buffer, "%.*s", (int) pattern.bytes, pattern.string);
+
+        char const *err;
+        int off;
+
+        pcre *re = pcre_compile(buffer, 0, &err, &off, NULL);
+        if (re == NULL)
+                return NIL;
+
+        pcre_extra *extra = pcre_study(re, PCRE_STUDY_EXTRA_NEEDED | PCRE_STUDY_JIT_COMPILE, &err);
+        if (extra == NULL)
+                return NIL;
+
+        struct value regex = REGEX(re);
+        regex.extra = extra;
+        regex.pattern = sclone(buffer);
+
+        return regex;
+}
+
+struct value
 builtin_min(value_vector *args)
 {
         if (args->count < 2) {
-                vm_panic("the builtin min function expects 2 or more arguments, but it was passed %zu", args->count);
+                vm_panic("min() expects 2 or more arguments, but got %zu", args->count);
         }
 
         struct value min, v;
@@ -199,7 +232,7 @@ struct value
 builtin_max(value_vector *args)
 {
         if (args->count < 2) {
-                vm_panic("the builtin max function expects 2 or more arguments, but it was passed %zu", args->count);
+                vm_panic("max() expects 2 or more arguments, but got %zu", args->count);
         }
 
         struct value max, v;
@@ -1206,5 +1239,8 @@ builtin_editor_buffer_write_to_proc(value_vector *args)
         if (proc.type != VALUE_INTEGER)
                 vm_panic("non-integer passed to buffer::writeToProc()");
 
-        buffer_write_to_proc(proc.integer);
+        if (!buffer_write_to_proc(proc.integer))
+                vm_panic("attempt to write to non-existent subprocess");
+
+        return NIL;
 }
