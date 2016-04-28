@@ -218,6 +218,12 @@ buffer_load_file(char const *path, int n);
 void
 buffer_clear(void);
 
+void
+buffer_clear_to_start(void);
+
+void
+buffer_clear_to_end(void);
+
 char const *
 buffer_file_name(void);
 
@@ -256,6 +262,9 @@ buffer_create(char const *prog, int n);
 
 void
 buffer_cycle_window_color(void);
+
+bool
+buffer_write_to_proc(int);
 
 void
 blog(char const *fmt, ...);

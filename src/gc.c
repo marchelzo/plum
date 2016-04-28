@@ -19,11 +19,8 @@ gc_alloc(size_t n)
 
         allocated += n;
 
-        if (allocated <= GC_ALLOC_THRESHOLD || gc_prevent != 0) {
+        if (allocated <= GC_ALLOC_THRESHOLD || gc_prevent != 0)
                 return mem;
-        }
-
-        LOG("doing gc...");
 
         vm_mark();        
 
@@ -34,8 +31,6 @@ gc_alloc(size_t n)
         vm_sweep_variables();
 
         allocated = 0;
-
-        LOG("done gc...");
 
         return mem;
 }

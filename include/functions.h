@@ -232,6 +232,15 @@ struct value
 builtin_editor_buffer_clear(value_vector *args);
 
 struct value
+builtin_editor_buffer_clear_to_start(value_vector *args);
+
+struct value
+builtin_editor_buffer_clear_to_end(value_vector *args);
+
+struct value
+builtin_editor_buffer_write_to_proc(value_vector *args);
+
+struct value
 builtin_editor_window_cycle_color(value_vector *args);
 
 #endif

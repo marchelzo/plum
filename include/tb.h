@@ -53,6 +53,12 @@ void
 tb_clear(struct tb *s);
 
 void
+tb_clear_left(struct tb *s);
+
+void
+tb_clear_right(struct tb *s);
+
+void
 tb_murder(struct tb *s);
 
 void

@@ -1173,9 +1173,38 @@ builtin_editor_buffer_clear(value_vector *args)
 }
 
 struct value
+builtin_editor_buffer_clear_to_start(value_vector *args)
+{
+        ASSERT_ARGC("buffer::clearToStart()", 0);
+        buffer_clear_to_start();
+        return NIL;
+}
+
+struct value
+builtin_editor_buffer_clear_to_end(value_vector *args)
+{
+        ASSERT_ARGC("buffer::clearToStart()", 0);
+        buffer_clear_to_end();
+        return NIL;
+}
+
+struct value
 builtin_editor_window_cycle_color(value_vector *args)
 {
         ASSERT_ARGC("window::cycleColor()", 0);
         buffer_cycle_window_color();
         return NIL;
+}
+
+struct value
+builtin_editor_buffer_write_to_proc(value_vector *args)
+{
+        ASSERT_ARGC("buffer::writeToProc()", 1);
+
+        struct value proc = args->items[0];
+
+        if (proc.type != VALUE_INTEGER)
+                vm_panic("non-integer passed to buffer::writeToProc()");
+
+        buffer_write_to_proc(proc.integer);
 }

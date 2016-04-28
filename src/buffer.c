@@ -218,25 +218,31 @@ echo(char const *fmt, ...)
 {
         int n;
         va_list args;
+        static char b[512];
 
         va_start(args, fmt);
-        n = vsnprintf(buffer, cols, fmt, args);
+        n = vsnprintf(b, cols, fmt, args);
         va_end(args);
 
         evt_send(write_fd, EVT_STATUS_MESSAGE);
         sendint(write_fd, n);
-        write(write_fd, buffer, n);
+        write(write_fd, b, n);
 }
 
 static void
 setfile(char const *path, int n)
 {
-        getcwd(fullpath, sizeof fullpath);
-        memcpy(shortpath, path, n);
-
-        int pwdlen = strlen(fullpath);
-        fullpath[pwdlen++] = '/';
-        memcpy(fullpath + pwdlen, path, n);
+        if (path[0] == '/') {
+                memcpy(fullpath, path, n);
+                fullpath[n] = '\0';
+        } else {
+                getcwd(fullpath, sizeof fullpath);
+                memcpy(shortpath, path, n);
+                int pwdlen = strlen(fullpath);
+                fullpath[pwdlen++] = '/';
+                memcpy(fullpath + pwdlen, path, n);
+                fullpath[pwdlen + n] = '\0';
+        }
 }
 
 /*
@@ -594,6 +600,18 @@ void
 buffer_clear(void)
 {
         tb_clear(&data);
+}
+
+void
+buffer_clear_to_start(void)
+{
+        tb_clear_left(&data);
+}
+
+void
+buffer_clear_to_end(void)
+{
+        tb_clear_right(&data);
 }
 
 int
@@ -996,11 +1014,11 @@ buffer_write_file(char const *path, int n)
                 return;
         }
 
-        tb_write(&data, fd);
+        int bytes = tb_write(&data, fd);
         close(fd);
 
         setfile(path, n);
-        echo("Wrote %.*s (%d bytes)", n, path, tb_size(&data));
+        echo("Wrote %.*s (%d bytes)", n, path, bytes);
 }
 
 void
@@ -1175,6 +1193,17 @@ int
 buffer_mode(void)
 {
         return state.mode;
+}
+
+bool
+buffer_write_to_proc(int p)
+{
+        if (!sp_fdvalid(p))
+                return false;
+
+        tb_write(&data, p);
+
+        return 0;
 }
 
 void

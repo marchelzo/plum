@@ -496,6 +496,20 @@ tb_clear(struct tb *s)
         removen(s, s->characters, s->record_history);
 }
 
+void
+tb_clear_left(struct tb *s)
+{
+        int n = s->character;
+        seek(s, 0);
+        removen(s, n, s->record_history);
+}
+
+void
+tb_clear_right(struct tb *s)
+{
+        removen(s, s->characters - s->character, s->record_history);
+}
+
 /*
  * Free all memory used by the tb. This can leave
  * the tb in an invalid state.
@@ -600,11 +614,23 @@ tb_read(struct tb *s, int fd)
 int
 tb_write(struct tb const *s, int fd)
 {
+        char const *r = RIGHT(s);
+
+        // TODO handle write errors
         write(fd, s->left, s->leftcount);
         write(fd, RIGHT(s), s->rightcount);
+
+        int n = s->leftcount + s->rightcount;
+        if (n == 0)
+                return n;
+        if (s->rightcount == 0 && s->left[n - 1] == '\n')
+                return n;
+        if (r[s->rightcount - 1] == '\n')
+                return n;
+
         write(fd, "\n", 1);
-        // TODO handle write errors
-        return 0;
+
+        return n + 1;
 }
 
 /*
@@ -1450,7 +1476,6 @@ TEST(clone_line)
         tb_seek(&s, 5);
 
         char const *line = tb_clone_line(&s);
-        printf("\nLine = '%s'\n", line);
         claim(strcmp(line, "this 乔 乕 乖 乗 hello") == 0);
 
         tb_seek(&s, 0);
