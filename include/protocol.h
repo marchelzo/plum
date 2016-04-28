@@ -52,12 +52,13 @@ static inline buffer_event_code
 evt_recv(int fd)
 {
         buffer_event_code code;
-
 Read:
-        switch (read(fd, &code, sizeof code)) {
-        case EINTR:       goto Read;
-        case sizeof code: return code;
-        default:          panic("read() failed: %s", strerror(errno));
+        if (read(fd, &code, sizeof code) == sizeof code)
+                return code;
+
+        switch (errno) {
+        case EINTR: goto Read;
+        default:         panic("read() failed: %s", strerror(errno));
         }
 }
 
@@ -71,8 +72,14 @@ static inline int
 recvint(int fd)
 {
         int val;
-        while (read(fd, &val, sizeof val) != sizeof val);
-        return val;
+Read:
+        if (read(fd, &val, sizeof val) == sizeof val)
+                return val;
+
+        switch (errno) {
+        case EINTR: goto Read;
+        default:         panic("read() failed: %s", strerror(errno));
+        }
 }
 
 #endif

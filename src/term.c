@@ -7,6 +7,7 @@
 #include <curses.h>
 #include <termkey.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 
 #include "editor.h"
 #include "colors.h"
@@ -51,9 +52,21 @@ restore()
         if (getpid() != pid)
                 return;
 
-        getmaxyx(stdscr, lines, cols);
+        struct winsize ws;
+        if (ioctl(1, TIOCGWINSZ, &ws) == -1) {
+                getmaxyx(stdscr, lines, cols);
+        } else {
+                lines = ws.ws_row;
+                cols = ws.ws_col;
+        }
+
         resizeterm(lines, cols);
+        wresize(stdscr, lines, cols);
+        werase(stdscr);
+        wnoutrefresh(stdscr);
+
         window_resize(editor->root_window, lines - 1, cols);
+
         editor_foreground(editor);
 }
 

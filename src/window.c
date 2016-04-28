@@ -45,8 +45,6 @@ refreshdimensions(struct window *w)
 {
         switch (w->type) {
         case WINDOW_WINDOW:
-                if (w->buffer == NULL)
-                        return;
                 w->buffer->window = w;
                 window_notify_dimensions(w);
                 break;
@@ -118,44 +116,6 @@ vbalance(struct window *w)
 
         vbalance(w->top);
         vbalance(w->bot);
-}
-
-static void
-fixtree(struct window *w)
-{
-        int extra;
-
-        switch (w->type) {
-        case WINDOW_VSPLIT:
-                w->one->width = w->width;
-                w->two->width = w->width;
-
-                extra = w->height - (w->one->height + w->two->height);
-                w->one->height += (extra / 2) + (extra & 1);
-                w->two->height += (extra / 2);
-
-                w->one->y = w->y;
-                w->two->y = w->y + w->one->height;
-                break;
-        case WINDOW_HSPLIT:
-                w->one->height = w->height;
-                w->two->height = w->height;
-
-                extra = w->width - (w->one->width + w->two->width);
-                w->one->width += (extra / 2) + (extra & 1);
-                w->two->width += (extra / 2);
-
-                w->one->x = w->x;
-                w->two->x = w->x + w->one->width;
-                break;
-        case WINDOW_WINDOW:
-                fixwin(w);
-                refreshdimensions(w);
-                return;
-        }
-
-        fixtree(w->one);
-        fixtree(w->two);
 }
 
 inline static void
@@ -441,6 +401,13 @@ window_delete(struct window *w)
         struct window *parent = w->parent;
         struct window *sibling = WINDOW_SIBLING(w);
 
+        void (*fix)(struct window *);
+        switch (parent->type) {
+        case WINDOW_HSPLIT: fix = hbalance; break;
+        case WINDOW_VSPLIT: fix = vbalance; break;
+        default:            assert(false);
+        }
+
         parent->type = sibling->type;
 
         if (sibling->type == WINDOW_WINDOW) {
@@ -454,7 +421,7 @@ window_delete(struct window *w)
                 parent->two = sibling->two;
                 parent->one->parent = parent;
                 parent->two->parent = parent;
-                fixtree(parent);
+                fix(parent);
         }
 
         refreshdimensions(parent);
@@ -485,24 +452,12 @@ window_search(struct window *w, int id)
 }
 
 void
-window_touch(struct window *w)
-{
-        switch (w->type) {
-        case WINDOW_HSPLIT:
-        case WINDOW_VSPLIT:
-                window_touch(w->one);
-                window_touch(w->two);
-        case WINDOW_WINDOW:
-                w->redraw = true;
-        }
-}
-
-void
 window_resize(struct window *w, int height, int width)
 {
         w->height = height;
         w->width = width;
-        fixtree(w);
+        hbalance(w);
+        vbalance(w);
 }
 
 void

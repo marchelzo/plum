@@ -103,12 +103,12 @@ Result:
         case FORWARD:
                 stringcount(r, m - r);
                 result.line = out.lines + line;
-                result.col = out.column + (out.lines == 0 ? col : 0);
+                result.col = out.column - col + (out.lines == 0 ? s->column : 0);
                 break;
         case BACKWARD:
                 stringcount(start, m - start);
                 result.line = out.lines;
-                result.col = out.column;
+                result.col = out.column - col;
                 break;
         }
 
@@ -122,7 +122,7 @@ Left:
         char c = s->left[s->leftcount - 1];
         if (s->leftcount > 0 && (p = findpair(c, &d)) != 0) {
                 switch (d) {
-                case FORWARD:  m = fwdmatch(r, c, p, end - r + 1); break;
+                case FORWARD:  m = fwdmatch(r, c, p, end - r);     break;
                 case BACKWARD: m = bkwdmatch(start, c, p, nl - 1); break;
                 }
         }

@@ -628,7 +628,7 @@ tb_draw(struct tb const *s, char *out, int line, int col, int lines, int cols)
         char const *start = getlineptr(s, line);
         char const *lptr = start;
 
-        struct location match = { -1, -1 };
+        struct location match;
 
         int drawing = min(lines, tb_lines(s) - line);
         out = writeint(out, drawing);
@@ -677,8 +677,8 @@ tb_draw(struct tb const *s, char *out, int line, int col, int lines, int cols)
 
 Match:
         /* If we're on a pair character, e.g., ( ) [ ] { }, try to find its match. */
-        match = matchpair(s, start, lptr, s->line - line, s->column - col);
-        if (match.col < col || match.col >= col + cols)
+        match = matchpair(s, start, lptr, s->line - line, col);
+        if (match.col < 0 || match.col >= cols)
                 match = (struct location){ -1, -1 };
         
         out = writeint(out, match.line);

@@ -92,9 +92,6 @@ struct window *
 window_search(struct window *w, int id);
 
 void
-window_touch(struct window *w);
-
-void
 window_resize(struct window *w, int height, int width);
 
 void
