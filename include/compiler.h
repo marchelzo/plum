@@ -14,6 +14,6 @@ char *
 compiler_compile_source(char const *source, int *symbols, char const *filename);
 
 struct location
-compiler_get_location(char const *code);
+compiler_get_location(char const *code, char const **file);
 
 #endif

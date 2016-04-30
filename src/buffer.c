@@ -1207,6 +1207,15 @@ buffer_write_to_proc(int p)
 }
 
 void
+buffer_source(void)
+{
+        char *source = tb_cstr(&data);
+        if (!vm_execute(source)) {
+        }
+        free(source);
+}
+
+void
 blog(char const *fmt, ...)
 {
         va_list ap;

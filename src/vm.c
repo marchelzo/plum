@@ -932,8 +932,13 @@ vm_panic(char const *fmt, ...)
         va_list ap;
         va_start(ap, fmt);
 
-        struct location loc = compiler_get_location(ip);
-        int n = sprintf(err_buf, "RuntimeError: <>:%d:%d: ", loc.line + 1, loc.col + 1);
+        char const *file;
+        struct location loc = compiler_get_location(ip, &file);
+        int n;
+        if (file == NULL)
+                n = sprintf(err_buf, "RuntimeError: %d:%d: ", loc.line + 1, loc.col + 1);
+        else
+                n = sprintf(err_buf, "RuntimeError: %s:%d:%d: ", file, loc.line + 1, loc.col + 1);
         vsnprintf(err_buf + n, sizeof err_buf - n, fmt, ap);
 
         va_end(ap);
@@ -961,6 +966,8 @@ vm_execute_file(char const *path)
 
         bool success = vm_execute(source);
         free(source);
+
+        filename = NULL;
 
         return success;
 }

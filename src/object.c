@@ -157,17 +157,15 @@ object_put_member(struct object *obj, char const *key, struct value value)
 struct value
 object_keys_array(struct object *obj)
 {
-        struct value keys;
-        keys.type = VALUE_ARRAY;
-        keys.array = value_array_new();
+        struct value_array *keys = value_array_new();
 
         for (int i = 0; i < OBJECT_NUM_BUCKETS; ++i) {
                 for (struct object_hashmap_node *node = obj->buckets[i]; node != NULL; node = node->next) {
-                        vec_push(*keys.array, node->key);
+                        vec_push(*keys, node->key);
                 }
         }
 
-        return keys;
+        return ARRAY(keys);
 }
 
 void

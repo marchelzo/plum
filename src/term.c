@@ -32,6 +32,7 @@ quit(struct editor *e)
          */
         write(1, INSERT_END_STRING, sizeof INSERT_END_STRING - 1);
 
+        termkey_stop(termkey);
         endwin();
 
         exit(EXIT_SUCCESS);

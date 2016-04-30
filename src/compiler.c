@@ -50,9 +50,12 @@ enum {
         LV_PUB  = 2,
 };
 
-// expression location
+/* expression location */
 struct eloc {
-        size_t offset;
+        union {
+                uintptr_t p;
+                size_t offset;
+        };
         struct expression const *e;
 };
 
@@ -79,6 +82,7 @@ struct import {
 
 typedef vec(struct import)    import_vector;
 typedef vec(struct reference) reference_vector;
+typedef vec(struct eloc)      location_vector;
 typedef vec(int)              symbol_vector;
 typedef vec(size_t)           offset_vector;
 typedef vec(char)             byte_vector;
@@ -106,7 +110,7 @@ struct state {
         char const *filename;
         struct location loc;
 
-        vec(struct eloc) expression_locations;
+        location_vector expression_locations;
 };
 
 static jmp_buf jb;
@@ -121,6 +125,7 @@ static int jumpdistance;
 static vec(struct module) modules;
 static struct state state;
 
+static vec(location_vector) location_lists;
 static symbol_vector public_symbols;
 
 static struct scope *global;
@@ -161,7 +166,12 @@ fail(char const *fmt, ...)
         va_list ap;
         va_start(ap, fmt);
 
-        int n = sprintf(err_buf, "CompileError: %s:%d:%d: ", !state.filename ? state.filename : "<null>", (int) state.loc.line + 1, (int) state.loc.col + 1);
+        int n;
+        if (state.filename == NULL)
+                n = sprintf(err_buf, "CompileError: %d:%d: ", state.loc.line + 1,state.loc.col + 1);
+        else
+                n = sprintf(err_buf, "CompileError: %s:%d:%d: ", state.filename, state.loc.line + 1,state.loc.col + 1);
+
         vsnprintf(err_buf + n, sizeof err_buf - n, fmt, ap);
 
         LOG("Failing with error: %s", err_buf);
@@ -169,6 +179,28 @@ fail(char const *fmt, ...)
         va_end(ap);
 
         longjmp(jb, 1);
+}
+
+static void
+add_location(struct expression *e)
+{
+        e->filename = state.filename;
+
+        vec_push(
+                state.expression_locations,
+                ((struct eloc){
+                        .offset = state.code.count,
+                        .e = e
+                })
+        );
+}
+
+static void
+patch_location_info(void)
+{
+        struct eloc *locs = state.expression_locations.items;
+        for (int i = 0; i < state.expression_locations.count; ++i)
+                locs[i].p = state.code.items + locs[i].offset;
 }
 
 inline static void
@@ -1427,9 +1459,7 @@ static void
 emit_expression(struct expression const *e)
 {
         state.loc = e->loc;
-        LOG("adding eloc with offset %zu\n", state.code.count);
-        LOG("location is: (%d, %d)", e->loc.line + 1, e->loc.col + 1);
-        vec_push(state.expression_locations, ((struct eloc){ .offset = state.code.count, .e = e }));
+        add_location(e);
 
         switch (e->type) {
         case EXPRESSION_IDENTIFIER:
@@ -1827,6 +1857,13 @@ import_module(char *name, char *as)
 
         emit_instr(INSTR_HALT);
 
+        /*
+         * Add all of the location information from this module to the
+         * global list.
+         */
+        patch_location_info();
+        vec_push(location_lists, state.expression_locations);
+
         module_scope = state.global;
         
         /*
@@ -1910,6 +1947,7 @@ compiler_compile_source(char const *source, int *symbols, char const *filename)
 {
         vec_init(state.code);
         vec_init(state.refs);
+        vec_init(state.expression_locations);
 
         state.filename = filename;
 
@@ -1927,42 +1965,64 @@ compiler_compile_source(char const *source, int *symbols, char const *filename)
                 return NULL;
         }
 
-        for (size_t i = 0; p[i] != NULL; ++i) {
+        for (size_t i = 0; p[i] != NULL; ++i)
                 symbolize_statement(state.global, p[i]);
-        }
 
         emit_new_globals();
 
-        for (size_t i = 0; p[i] != NULL; ++i) {
+        for (size_t i = 0; p[i] != NULL; ++i)
                 emit_statement(p[i]);
-        }
 
         emit_instr(INSTR_HALT);
+
+        vec_push(state.expression_locations, ((struct eloc){ .offset = state.code.count, .e = NULL }));
+        patch_location_info();
+        vec_push(location_lists, state.expression_locations);
 
         *symbols = symbol;
         return state.code.items;
 }
 
 struct location
-compiler_get_location(char const *code)
+compiler_get_location(char const *code, char const **file)
 {
+        location_vector *locs = NULL;
+
+        uintptr_t c = code;
+
+        /*
+         * First do a linear search for the group of locations which
+         * contains this one.
+         */
+        for (int i = 0; i < location_lists.count; ++i) {
+                if (c < location_lists.items[i].items[0].p)
+                        continue;
+                if (c > vec_last(location_lists.items[i])->p)
+                        continue;
+                locs = &location_lists.items[i];
+                break;
+        }
+
+        if (locs == NULL)
+                return (struct location) { -1, -1 };
+
+        /*
+         * Now do a binary search within this group of locations.
+         */
+
         int lo = 0,
-            hi = state.expression_locations.count - 1;
-
-        struct eloc *elocs = state.expression_locations.items;
-
-        size_t offset = code - state.code.items;
+            hi = locs->count - 1;
 
         while (lo <= hi) {
                 int m = (lo / 2) + (hi / 2) + (lo & hi & 1);
-                if      (offset < elocs[m].offset) hi = m - 1;
-                else if (offset > elocs[m].offset) lo = m + 1;
-                else                               break;
+                if      (c < locs->items[m].p) hi = m - 1;
+                else if (c > locs->items[m].p) lo = m + 1;
+                else                           break;
         }
 
-        while (lo > 0 && (lo >= state.expression_locations.count || elocs[lo].offset >= offset)) {
+        while (lo > 0 && (lo >= locs->count || locs->items[lo].p >= c))
                 --lo;
-        }
 
-        return elocs[lo].e->loc;
+        *file = locs->items[lo].e->filename;
+        return locs->items[lo].e->loc;
 }

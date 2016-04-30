@@ -152,7 +152,10 @@ struct expression {
 
                 EXPRESSION_LIST,
         } type;
+
+        char const *filename;
         struct location loc;
+
         union {
                 intmax_t integer;
                 bool boolean;

@@ -5,7 +5,12 @@ import editor
 let id = nil;
 let win = nil;
 
-buffer::onMessage('Start', function (newId, winId) { id = newId; win = int(winId); buffer::insertMode(); });
+buffer::onMessage('Start', function (newId, winId) {
+        editor::log("newId = {newId}, winId = {winId}");
+        id = newId;
+        win = int(winId);
+        buffer::insertMode();
+});
 
 buffer::mapInsert(['Enter'], function () {
         let line = buffer::getLine();

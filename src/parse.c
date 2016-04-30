@@ -159,7 +159,6 @@ mkret(struct expression *value)
         struct statement *s = mkstmt();
         s->type = STATEMENT_RETURN;
         s->return_value = value;
-
         return s;
 }
 

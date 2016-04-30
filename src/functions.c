@@ -188,7 +188,7 @@ builtin_regex(value_vector *args)
         if (pattern.type != VALUE_STRING)
                 vm_panic("non-string passed to regex()");
 
-        snprintf(buffer, sizeof buffer, "%.*s", (int) pattern.bytes, pattern.string);
+        snprintf(buffer, sizeof buffer - 1, "%.*s", (int) pattern.bytes, pattern.string);
 
         char const *err;
         int off;
@@ -638,13 +638,8 @@ builtin_editor_map_insert(value_vector *args)
 struct value
 builtin_editor_source(value_vector *args)
 {
-        ASSERT_ARGC("buffer::source()", 1);
-
-        struct value path = args->items[0];
-        if (path.type != VALUE_STRING) {
-                vm_panic("non-string passed to buffer::source()");
-        }
-
+        ASSERT_ARGC("buffer::source()", 0);
+        buffer_source();
         return NIL;
 }
 
@@ -777,9 +772,13 @@ builtin_editor_log(value_vector *args)
         }
 
         for (int i = 0; i < args->count; ++i) {
-                char *s = value_show(&args->items[i]);
-                buffer_log(s);
-                free(s);
+                if (args->items[i].type == VALUE_STRING) {
+                        blog("%.*s", (int) args->items[i].bytes, args->items[i].string);
+                } else {
+                        char *s = value_show(&args->items[i]);
+                        buffer_log(s);
+                        free(s);
+                }
         }
 
         return NIL;

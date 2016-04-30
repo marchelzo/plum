@@ -3,10 +3,31 @@ import proc
 import editor
 import plum::command as command
 
+function clangfmt() {
+        let p = proc::spawn('clang-format', ['-style={BasedOnStyle: llvm, IndentWidth: 8}'], buffer::insert, nil);
+        buffer::writeProcess(p);
+        proc::close(p);
+        buffer::clear();
+}
+
+function termbin() {
+        let p = proc::spawn('nc', ['termbin.com', '9999'], |editor::echo(#.replace("\n", ''))|, nil);
+        buffer::writeProcess(p);
+        proc::close(p);
+        proc::wait(p);
+}
+
+function pstd() {
+        let p = proc::spawn('pstd', [], |editor::echo(#.replace("\n", ''))|, nil);
+        buffer::writeProcess(p);
+        proc::close(p);
+        proc::wait(p);
+}
+
 function shell() {
         let p = proc::spawn('bash', [], buffer::insert, nil);
-        buffer::gotoStart();
-        buffer::remove(100000);
+
+        buffer::clear();
 
         let history = [];
         let i = 0;
@@ -80,11 +101,23 @@ function load(file) {
         buffer::gotoStart();
 }
 
+function save(f) {
+        if (f == '')
+                buffer::writeFile();
+        else
+                buffer::writeFile(f);
+}
+
 let commands = {
-        'w': buffer::writeFile,
+        'w': save,
         '!': bang,
+        '/': buffer::findNext,
         'load': load,
-        'shell': shell
+        'e': buffer::editFile,
+        'shell': shell,
+        'pstd': pstd,
+        'termbin': termbin,
+        'fmt': clangfmt
 };
 
 for (c in @commands) {
