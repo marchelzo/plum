@@ -1,0 +1,74 @@
+import buffer
+import window
+import editor
+import proc
+
+let id = nil;
+let win = nil;
+
+let prompt = 'Open file: ';
+
+let lastInput = nil;
+let matches = [];
+let index = nil;
+
+function complete(s) {
+        buffer::startOfLine();
+        buffer::cutLine();
+        buffer::insert(prompt + s);
+        lastInput = s;
+}
+
+buffer::onMessage('Start', function (newId, winId) {
+        id = newId;
+        win = int(winId);
+        buffer::insertMode();
+        buffer::insert(prompt);
+});
+
+buffer::mapInsert(['Tab'], function () {
+
+        let input = buffer::getLine().slice(prompt.len()) || '';
+
+        if (input == lastInput && index != nil) {
+                index = (index + 1) % matches.len();
+                complete(matches[index]);
+                return;
+        } else {
+                index = nil;
+                lastInput = input;
+        }
+
+        if (input.len() == 0)
+                return;
+
+        let output = '';
+        let p = proc::spawn('sh', ['-c', "fzf -f {input} < /dev/tty"], |output += #|, nil);
+        proc::close(p);
+        proc::wait(p);
+        
+        match output.split("\n") {
+                []  => ;,
+                fs  => {
+                        matches = fs + [''];
+                        index = 0;
+                        complete(matches[0]);
+                }
+        }
+});
+
+buffer::mapInsert(['Enter'], function () {
+        let file = buffer::getLine().slice(prompt.len());
+        buffer::sendMessage(id, 'Command', 'e ' + file.replace('~', getenv('HOME')));
+        buffer::startOfLine();
+        buffer::cutLine();
+        window::goto(win);
+        window::delete();
+});
+
+buffer::mapInsert(['j', 'k'], function () {
+        window::goto(win);
+        window::delete();
+        buffer::startOfLine();
+        buffer::cutLine();
+});
