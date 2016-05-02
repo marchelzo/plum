@@ -11,6 +11,7 @@ CFLAGS += -lncurses
 CFLAGS += -lpthread
 CFLAGS += -lm
 CFLAGS += -Wno-switch
+CFLAGS += -Wno-unused-value
 
 CFLAGS += -DINSERT_BEGIN_STRING="\"$(PLUM_INSERT_ENTER)\""
 CFLAGS += -DINSERT_END_STRING="\"$(PLUM_INSERT_LEAVE)\""

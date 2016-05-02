@@ -117,7 +117,7 @@ bool
 value_apply_predicate(struct value *p, struct value *v);
 
 struct value
-value_apply_callable(struct value const *f, struct value const *v);
+value_apply_callable(struct value const *f, struct value *v);
 
 char *
 value_show(struct value const *v);

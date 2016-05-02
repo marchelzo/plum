@@ -126,9 +126,9 @@ bool
 vm_execute_file(char const *path);
 
 struct value
-vm_eval_function(struct value const * restrict f, struct value const * restrict v);
+vm_eval_function(struct value const * restrict f, struct value * restrict v);
 
 struct value
-vm_eval_function2(struct value *f, struct value const *v1, struct value const *v2);
+vm_eval_function2(struct value *f, struct value *v1, struct value *v2);
 
 #endif

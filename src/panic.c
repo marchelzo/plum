@@ -1,9 +1,9 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
+#include <stdnoreturn.h>
 
-bool // we use bool instead of _Noreturn void so it can be used in expressions: e.g., (foo() || panic("blah"))
+noreturn void
 panic(char const *fmt, ...)
 {
         va_list ap;
@@ -14,6 +14,4 @@ panic(char const *fmt, ...)
         va_end(ap);
 
         exit(EXIT_FAILURE);
-
-        return false; // unreachable
 }

@@ -37,6 +37,8 @@ find(struct window *w, int x, int y)
                         return find(w->bot, x, y);
         case WINDOW_WINDOW:
                 return w;
+        default:
+                assert(false);
         }
 }
 

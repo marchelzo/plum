@@ -161,7 +161,7 @@ builtin_str(value_vector *args)
         if (arg.type == VALUE_STRING) {
                 return arg;
         } else {
-                char const *str = value_show(&arg);
+                char *str = value_show(&arg);
                 struct value result = STRING_CLONE(str, strlen(str));
                 free(str);
                 return result;
@@ -696,6 +696,21 @@ builtin_editor_goto_end(value_vector *args)
 {
         ASSERT_ARGC("buffer::gotoStart()", 0);
         buffer_end();
+        return NIL;
+}
+
+struct value
+builtin_editor_goto_line(value_vector *args)
+{
+        ASSERT_ARGC("buffer::gotoLine()", 1);
+
+        struct value line = args->items[0];
+
+        if (line.type != VALUE_INTEGER)
+                vm_panic("non-integer passed to buffer::gotoLine()");
+
+        buffer_goto_line(line.integer);
+
         return NIL;
 }
 

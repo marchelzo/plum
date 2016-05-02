@@ -1,9 +1,9 @@
 #ifndef PANIC_H_INCLUDED
 #define PANIC_H_INCLUDED
 
-#include <stdbool.h>
+#include <stdnoreturn.h>
 
-bool
+noreturn void
 panic(char const *fmt, ...);
 
 #endif

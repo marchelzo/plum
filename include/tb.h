@@ -67,6 +67,9 @@ tb_insert(struct tb *s, char const *data, int n);
 int
 tb_seek(struct tb *s, int i);
 
+void
+tb_seek_line(struct tb *s, int i);
+
 struct tb
 tb_new(void);
 

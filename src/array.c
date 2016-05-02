@@ -15,15 +15,15 @@ static struct value *comparison_fn;
 static int
 compare_by(void const *v1, void const *v2)
 {
-        struct value k1 = value_apply_callable(comparison_fn, v1);
-        struct value k2 = value_apply_callable(comparison_fn, v2);
+        struct value k1 = value_apply_callable(comparison_fn, (struct value *)v1);
+        struct value k2 = value_apply_callable(comparison_fn, (struct value *)v2);
         return value_compare(&k1, &k2);
 }
 
 static int
 compare_by2(void const *v1, void const *v2)
 {
-        struct value v = vm_eval_function2(comparison_fn, v1, v2);
+        struct value v = vm_eval_function2(comparison_fn, (struct value *)v1, (struct value *)v2);
 
         if (v.type == VALUE_INTEGER) {
                 return v.integer;

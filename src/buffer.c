@@ -261,7 +261,6 @@ setfile(char const *path, int n)
  *      number of bytes (n) - int
  *      n bytes
  *
- * (line, col) of highlighted char - (int, int)
  */
 static void
 render(void)
@@ -1213,6 +1212,12 @@ buffer_source(void)
         if (!vm_execute(source)) {
         }
         free(source);
+}
+
+void
+buffer_goto_line(int i)
+{
+        tb_seek_line(&data, i);
 }
 
 void

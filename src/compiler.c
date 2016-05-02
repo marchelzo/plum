@@ -70,7 +70,7 @@ struct scope {
 };
 
 struct module {
-        char *path;
+        char const *path;
         char *code;
         struct scope *scope;
 };
@@ -182,9 +182,10 @@ fail(char const *fmt, ...)
 }
 
 static void
-add_location(struct expression *e)
+add_location(struct expression const *e)
 {
-        e->filename = state.filename;
+        if (e != NULL)
+                ((struct expression *)e)->filename = state.filename;
 
         vec_push(
                 state.expression_locations,
@@ -200,7 +201,7 @@ patch_location_info(void)
 {
         struct eloc *locs = state.expression_locations.items;
         for (int i = 0; i < state.expression_locations.count; ++i)
-                locs[i].p = state.code.items + locs[i].offset;
+                locs[i].p = (uintptr_t)(state.code.items + locs[i].offset);
 }
 
 inline static void
@@ -1975,7 +1976,7 @@ compiler_compile_source(char const *source, int *symbols, char const *filename)
 
         emit_instr(INSTR_HALT);
 
-        vec_push(state.expression_locations, ((struct eloc){ .offset = state.code.count, .e = NULL }));
+        add_location(NULL);
         patch_location_info();
         vec_push(location_lists, state.expression_locations);
 
@@ -1988,7 +1989,7 @@ compiler_get_location(char const *code, char const **file)
 {
         location_vector *locs = NULL;
 
-        uintptr_t c = code;
+        uintptr_t c = (uintptr_t) code;
 
         /*
          * First do a linear search for the group of locations which
@@ -2009,7 +2010,6 @@ compiler_get_location(char const *code, char const **file)
         /*
          * Now do a binary search within this group of locations.
          */
-
         int lo = 0,
             hi = locs->count - 1;
 

@@ -136,6 +136,9 @@ struct value
 builtin_editor_goto_start(value_vector *args);
 
 struct value
+builtin_editor_goto_line(value_vector *args);
+
+struct value
 builtin_editor_get_char(value_vector *args);
 
 struct value

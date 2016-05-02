@@ -310,7 +310,7 @@ value_apply_predicate(struct value *p, struct value *v)
 }
 
 struct value
-value_apply_callable(struct value const *f, struct value const *v)
+value_apply_callable(struct value const *f, struct value *v)
 {
         switch (f->type) {
         case VALUE_FUNCTION:
@@ -320,47 +320,46 @@ value_apply_callable(struct value const *f, struct value const *v)
                 if (v->type != VALUE_STRING) {
                         vm_panic("regex applied as predicate to non-string");
                 }
-                {
-                        static int ovec[30];
-                        char const *s = v->string;
-                        int len = v->bytes;
-                        int rc;
 
-                        rc = pcre_exec(
-                                f->regex,
-                                NULL,
-                                s,
-                                len,
-                                0,
-                                0,
-                                ovec,
-                                30
-                        );
+                static int ovec[30];
+                char const *s = v->string;
+                int len = v->bytes;
+                int rc;
 
-                        if (rc < -1) {
-                                vm_panic("error while executing regular expression");
-                        }
+                rc = pcre_exec(
+                        f->regex,
+                        NULL,
+                        s,
+                        len,
+                        0,
+                        0,
+                        ovec,
+                        30
+                );
 
-                        if (rc == -1) {
-                                return NIL;
-                        }
-
-                        struct value match;
-
-                        if (rc == 1) {
-                                match = STRING_VIEW(*v, ovec[0], ovec[1] - ovec[0]);
-                        } else {
-                                match = ARRAY(value_array_new());
-                                vec_reserve(*match.array, rc);
-
-                                int j = 0;
-                                for (int i = 0; i < rc; ++i, j += 2) {
-                                        vec_push(*match.array, STRING_VIEW(*v, ovec[j], ovec[j + 1] - ovec[j]));
-                                }
-                        }
-
-                        return match;
+                if (rc < -1) {
+                        vm_panic("error while executing regular expression");
                 }
+
+                if (rc == -1) {
+                        return NIL;
+                }
+
+                struct value match;
+
+                if (rc == 1) {
+                        match = STRING_VIEW(*v, ovec[0], ovec[1] - ovec[0]);
+                } else {
+                        match = ARRAY(value_array_new());
+                        vec_reserve(*match.array, rc);
+
+                        int j = 0;
+                        for (int i = 0; i < rc; ++i, j += 2) {
+                                vec_push(*match.array, STRING_VIEW(*v, ovec[j], ovec[j + 1] - ovec[j]));
+                        }
+                }
+
+                return match;
         case VALUE_TAG:
                 {
                         struct value result = *v;

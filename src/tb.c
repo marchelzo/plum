@@ -19,7 +19,6 @@
 #include "panic.h"
 #include "alloc.h"
 #include "utf8.h"
-#include "matchpair.h"
 #include "vm.h"
 
 #define RIGHT(s) ((s)->right + (s)->capacity - (s)->rightcount)
@@ -320,33 +319,67 @@ seek(struct tb *s, int i)
                 s->leftcount += outpos.bytes;
                 s->rightcount -= outpos.bytes;
                 s->line += outpos.lines;
-        } else {
+        } else if (i < s->character / 2) {
                 stringcount(s->left, s->leftcount, -1, i, -1);
                 memcpy(r - s->leftcount + outpos.bytes, s->left + outpos.bytes, s->leftcount - outpos.bytes);
                 s->rightcount += s->leftcount - outpos.bytes;
                 s->leftcount = outpos.bytes;
                 s->line = outpos.lines;
+        } else {
+                tb_backward(s, s->character - i);
+                return;
         }
 
         s->column = outpos.column;
         s->character = i;
 }
 
-inline static void
-seekline(struct tb *s, int i)
+void
+tb_seek_line(struct tb *s, int i)
 {
-        char *r = RIGHT(s);
+        if (i >= s->lines)
+                i = s->lines - 1;
 
-        if (i == 0) {
-                memcpy(RIGHT(s) - s->leftcount, s->left, s->leftcount);
-                s->rightcount += s->leftcount;
-                s->leftcount = 0;
-                s->character = 0;
-                s->line = 0;
-                s->column = 0;
-                return;
+        if (i < 0)
+                i = 0;
+
+        int ln = i;
+        int bytes = 0;
+
+        if (i >= s->line) {
+                i -= s->line;
+                char const *r = RIGHT(s);
+                char const *end = s->right + s->capacity;
+                while (i > 0 && r < end)
+                        ++bytes, i -= *r++ == '\n';
+                s->character += utf8_charcount(RIGHT(s), bytes);
+                memcpy(s->left + s->leftcount, RIGHT(s), bytes);
+                s->leftcount += bytes;
+                s->rightcount -= bytes;
+        } else if (i <= s->line / 2) {
+                bytes = s->leftcount;
+                char const *l = s->left;
+                while (i > 0)
+                        --bytes, i -= *l++ == '\n';
+                s->character = utf8_charcount(s->left, bytes);
+                memcpy(RIGHT(s) - bytes, l, bytes);
+                s->leftcount -= bytes;
+                s->rightcount += bytes;
+        } else {
+                i = s->line - i;
+                char const *l = s->left + s->leftcount;
+                while (i > 0)
+                        ++bytes, i -= *--l == '\n';
+                while (l > s->left && l[-1] != '\n')
+                        ++bytes, --l;
+                s->character -= utf8_charcount(l, bytes);
+                memcpy(RIGHT(s) - bytes, l, bytes);
+                s->leftcount -= bytes;
+                s->rightcount += bytes;
         }
 
+        s->line = ln;
+        s->highcol = s->column = 0;
 }
 
 inline static int
@@ -533,6 +566,7 @@ int
 tb_seek(struct tb *s, int i)
 {
         seek(s, i);
+        s->highcol = s->column;
         return s->character;
 }
 
@@ -651,10 +685,7 @@ tb_size(struct tb const *s)
 void
 tb_draw(struct tb const *s, char *out, int line, int col, int lines, int cols)
 {
-        char const *start = getlineptr(s, line);
-        char const *lptr = start;
-
-        struct location match;
+        char const *lptr = getlineptr(s, line);
 
         int drawing = min(lines, tb_lines(s) - line);
         out = writeint(out, drawing);
@@ -682,7 +713,7 @@ tb_draw(struct tb const *s, char *out, int line, int col, int lines, int cols)
 
                 if (s->line == s->lines || moved == s->rightcount) {
                         lptr = r + s->rightcount;
-                        goto Match;
+                        return;
                 }
 
                 lptr = r + 1;
@@ -700,15 +731,6 @@ tb_draw(struct tb const *s, char *out, int line, int col, int lines, int cols)
                 if (lptr != end)
                         ++lptr;
         }
-
-Match:
-        /* If we're on a pair character, e.g., ( ) [ ] { }, try to find its match. */
-        match = matchpair(s, start, lptr, s->line - line, col);
-        if (match.col < 0 || match.col >= cols)
-                match = (struct location){ -1, -1 };
-        
-        out = writeint(out, match.line);
-        out = writeint(out, match.col);
 }
 
 
@@ -1008,11 +1030,10 @@ tb_get_char(struct tb const *s, int i)
 
         int bytes;
         char const *c;
-        if (i < s->character) {
+        if (i < s->character)
                 c = utf8_nth_char(s->left, i, &bytes);
-        } else {
+        else
                 c = utf8_nth_char(RIGHT(s), i - s->character, &bytes);
-        }
 
         return STRING_CLONE(c, bytes);
 }
@@ -1494,6 +1515,19 @@ TEST(up)
         
         tb_up(&s, 1);
         claim(s.line == 0);
+        claim(s.column == 3);
+}
+
+TEST(down)
+{
+        struct tb s = tb_new();
+
+        tb_pushs(&s, "this 乔 乕 乖 乗 hello\n乘 world");
+        tb_seek(&s, 0);
+        claim(s.line == 0);
+
+        claim(tb_down(&s, 1) == 1);
+        claim(s.line == 1);
         claim(s.column == 0);
 }
 

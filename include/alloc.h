@@ -3,7 +3,7 @@
 
 #include <stdlib.h>
 
-#define resize(ptr, n) ((void)(((ptr) = realloc((ptr), (n))) || panic("out of memory")))
+#define resize(ptr, n) (((ptr) = realloc((ptr), (n))) || (panic("out of memory"), false))
 
 void *
 alloc(size_t n);

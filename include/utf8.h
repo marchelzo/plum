@@ -73,6 +73,9 @@ utf8_stringcount(char const *str, int len, struct stringpos * restrict pos, stru
                         if (pos->columns == limit->columns)
                                 break;
 
+                        if (limit->lines == 0)
+                                break;
+
                         str += 1;
                         len -= 1;
 
@@ -252,10 +255,10 @@ utf8_next_char(char const *s, int n)
 		return NULL;
 
 	if (*s == '\n')
-		return s + 1;
+		return ((char *)s) + 1;
 
 	uint32_t cp;
 	int bytes = next_utf8(s, 64, &cp);
 
-	return s + bytes;
+	return ((char *)s) + bytes;
 }

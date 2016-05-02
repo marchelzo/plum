@@ -83,6 +83,7 @@ static struct {
         { .module = "buffer", .name = "endOfLine",         .fn = builtin_editor_end_of_line            },
         { .module = "buffer", .name = "gotoStart",         .fn = builtin_editor_goto_start             },
         { .module = "buffer", .name = "gotoEnd",           .fn = builtin_editor_goto_end               },
+        { .module = "buffer", .name = "gotoLine",          .fn = builtin_editor_goto_line              },
         { .module = "buffer", .name = "getLine",           .fn = builtin_editor_get_line               },
         { .module = "buffer", .name = "getChar",           .fn = builtin_editor_get_char               },
         { .module = "buffer", .name = "line",              .fn = builtin_editor_line                   },
@@ -868,16 +869,15 @@ vm_exec(char *code)
                                 vars[vp->bound_symbols.items[i]] = newvar(vars[vp->bound_symbols.items[i]]);
                         }
                         READVALUE(n);
-                        while (n > 0 && n > vp->param_symbols.count) {
-                                pop();
-                                --n;
-                        }
-                        for (int i = n; i < vp->param_symbols.count; ++i) {
+                        /* throw away ignored arguments */
+                        while (n > vp->param_symbols.count)
+                                pop(), --n;
+                        /* default missing parameters to nil */
+                        for (int i = n; i < vp->param_symbols.count; ++i)
                                 vars[vp->param_symbols.items[i]]->value = NIL;
-                        }
-                        while (n --> 0) {
+                        /* fill in the rest of the arguments */
+                        while (n --> 0)
                                 vars[vp->param_symbols.items[n]]->value = pop();
-                        }
                         for (int i = 0; i < vp->refs->count; ++i) {
                                 struct reference ref = vp->refs->refs[i];
                                 LOG("resolving reference to %p", (void *) ref.pointer);
@@ -934,6 +934,7 @@ vm_panic(char const *fmt, ...)
 
         char const *file;
         struct location loc = compiler_get_location(ip, &file);
+
         int n;
         if (file == NULL)
                 n = sprintf(err_buf, "RuntimeError: %d:%d: ", loc.line + 1, loc.col + 1);
@@ -1006,7 +1007,7 @@ vm_execute(char const *source)
 }
 
 struct value
-vm_eval_function(struct value const *f, struct value const *v)
+vm_eval_function(struct value const *f, struct value *v)
 {
         if (f->type == VALUE_FUNCTION) {
                 vec_push(callstack, &halt);
@@ -1047,7 +1048,7 @@ vm_eval_function(struct value const *f, struct value const *v)
 }
 
 struct value
-vm_eval_function2(struct value *f, struct value const *v1, struct value const *v2)
+vm_eval_function2(struct value *f, struct value *v1, struct value *v2)
 {
         if (f->type == VALUE_FUNCTION ){
                 vec_push(callstack, &halt);

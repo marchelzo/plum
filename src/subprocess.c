@@ -118,6 +118,7 @@ sp_tryspawn(char *path, struct value_array *args, struct value on_output, struct
                         exit(EXIT_FAILURE);
                 }
 
+                return false;
         } else {
                 // parent
                 close(c2p[1]);

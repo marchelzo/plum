@@ -267,6 +267,12 @@ bool
 buffer_write_to_proc(int);
 
 void
+buffer_source(void);
+
+void
+buffer_goto_line(int);
+
+void
 blog(char const *fmt, ...);
 
 #endif
