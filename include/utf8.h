@@ -55,6 +55,57 @@ next_utf8(const char *str, int len, uint32_t *cp)
 }
 
 inline static int
+utf8_count(char const *str, int len, struct stringpos *pos)
+{
+        pos->bytes = 0;
+        pos->column = 0;
+        pos->columns = 0;
+        pos->lines = 0;
+        pos->graphemes = 0;
+
+        while (len != 0) {
+
+                if (*str == '\n') {
+
+                        str += 1;
+                        len -= 1;
+
+                        pos->lines += 1;
+                        pos->column = 0;
+                        pos->graphemes += 1;
+                        pos->bytes += 1;
+
+                        continue;
+                }
+
+                uint32_t cp;
+                int bytes = next_utf8(str, len, &cp);
+                if (bytes == -1)
+                        return -1;
+
+                /* Abort on C0 or C1 controls */
+                if (cp < 0x20 || (cp >= 0x80 && cp < 0xa0))
+                        return -1;
+
+                int width = mk_wcwidth(cp);
+                if (width == -1)
+                        return -1;
+
+                int is_grapheme = (width > 0) ? 1 : 0;
+
+                str += bytes;
+                len -= bytes;
+
+                pos->bytes += bytes;
+                pos->graphemes += is_grapheme;
+                pos->columns += width;
+                pos->column += width;
+        }
+
+        return 0;
+}
+
+inline static int
 utf8_stringcount(char const *str, int len, struct stringpos * restrict pos, struct stringpos const * restrict limit)
 {
         pos->bytes = 0;

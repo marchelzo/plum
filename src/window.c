@@ -448,6 +448,8 @@ window_search(struct window *w, int id)
         case WINDOW_VSPLIT:
                 (r = window_search(w->one, id)) || (r = window_search(w->two, id));
                 break;
+        default:
+                assert(false);
         }
 
         return r;

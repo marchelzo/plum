@@ -142,6 +142,15 @@ struct value
 builtin_editor_get_char(value_vector *args);
 
 struct value
+builtin_editor_next_char(value_vector *args);
+
+struct value
+builtin_editor_find_forward(value_vector *args);
+
+struct value
+builtin_editor_find_backward(value_vector *args);
+
+struct value
 builtin_editor_get_line(value_vector *args);
 
 struct value

@@ -86,6 +86,9 @@ static struct {
         { .module = "buffer", .name = "gotoLine",          .fn = builtin_editor_goto_line              },
         { .module = "buffer", .name = "getLine",           .fn = builtin_editor_get_line               },
         { .module = "buffer", .name = "getChar",           .fn = builtin_editor_get_char               },
+        { .module = "buffer", .name = "nextChar",          .fn = builtin_editor_next_char              },
+        { .module = "buffer", .name = "findForward",       .fn = builtin_editor_find_forward           },
+        { .module = "buffer", .name = "findBackward",      .fn = builtin_editor_find_backward          },
         { .module = "buffer", .name = "line",              .fn = builtin_editor_line                   },
         { .module = "buffer", .name = "column",            .fn = builtin_editor_column                 },
         { .module = "buffer", .name = "point",             .fn = builtin_editor_point                  },
@@ -741,7 +744,6 @@ vm_exec(char *code)
                         push(v);
                         break;
                 CASE(CALL)
-                        LOG("print is at %p", (void *) &vars[0]->value);
                         v = pop();
                         if (v.type == VALUE_FUNCTION) {
                                 for (int i = 0; i < v.bound_symbols.count; ++i) {
@@ -754,10 +756,8 @@ vm_exec(char *code)
                                         vars[v.bound_symbols.items[i]] = vars[v.bound_symbols.items[i]]->prev;
                                 }
                                 READVALUE(n);
-                                LOG("function call has %d arguments", n);
                                 while (n > v.param_symbols.count) {
-                                        struct value v2 = pop();
-                                        LOG("not passing: %s", value_show(&v2));
+                                        pop();
                                         --n;
                                 }
                                 for (int i = n; i < v.param_symbols.count; ++i) {

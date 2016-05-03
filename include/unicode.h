@@ -129,7 +129,8 @@ static const struct interval combining[] = {
 
 
 /* auxiliary function for binary search in interval table */
-static int bisearch(wchar_t ucs, const struct interval *table, int max) {
+inline static int
+bisearch(wchar_t ucs, const struct interval *table, int max) {
   int min = 0;
   int mid;
 
@@ -182,7 +183,8 @@ static int bisearch(wchar_t ucs, const struct interval *table, int max) {
  */
 
 
-static int mk_wcwidth(wchar_t ucs)
+inline static int
+mk_wcwidth(wchar_t ucs)
 {
   /* test for 8-bit control characters */
   if (ucs == 0)

@@ -715,9 +715,9 @@ builtin_editor_goto_line(value_vector *args)
 }
 
 struct value
-builtin_editor_get_char(value_vector *args)
+builtin_editor_next_char(value_vector *args)
 {
-        ASSERT_ARGC_2("buffer::getChar()", 0, 1);
+        ASSERT_ARGC_2("buffer::nextChar()", 0, 1);
 
         int i;
         if (args->count == 0) {
@@ -725,7 +725,7 @@ builtin_editor_get_char(value_vector *args)
         } else {
                 struct value v = args->items[0];
                 if (v.type != VALUE_INTEGER) {
-                        vm_panic("non-integer passed to buffer::getChar()");
+                        vm_panic("non-integer passed to buffer::nextChar()");
                 }
                 if (v.integer < 0) {
                         return NIL;
@@ -733,7 +733,14 @@ builtin_editor_get_char(value_vector *args)
                 i = v.integer;
         }
 
-        return buffer_get_char(i);
+        return buffer_next_char(i);
+}
+
+struct value
+builtin_editor_get_char(value_vector *args)
+{
+        ASSERT_ARGC("buffer::getChar()", 0);
+        return buffer_get_char();
 }
 
 struct value
@@ -1257,4 +1264,30 @@ builtin_editor_buffer_write_to_proc(value_vector *args)
                 vm_panic("attempt to write to non-existent subprocess");
 
         return NIL;
+}
+
+struct value
+builtin_editor_find_forward(value_vector *args)
+{
+        ASSERT_ARGC("buffer::findForward()", 1);
+
+        struct value s = args->items[0];
+
+        if (s.type != VALUE_STRING)
+                vm_panic("non-string passed to buffer::findForward()");
+
+        return BOOLEAN(buffer_find_forward(s.string, s.bytes));
+}
+
+struct value
+builtin_editor_find_backward(value_vector *args)
+{
+        ASSERT_ARGC("buffer::findBackward()", 1);
+
+        struct value s = args->items[0];
+
+        if (s.type != VALUE_STRING)
+                vm_panic("non-string passed to buffer::findBackward()");
+
+        return BOOLEAN(buffer_find_backward(s.string, s.bytes));
 }

@@ -849,7 +849,7 @@ buffer_mark_values(void)
 }
 
 struct value
-buffer_get_char(int i)
+buffer_next_char(int i)
 {
         if (i == -1)
                 return tb_get_char(&data, data.character);
@@ -1042,6 +1042,8 @@ buffer_load_file(char const *path, int n)
         tb_read(&data, fd);
         tb_seek(&data, 0);
 
+        close(fd);
+
         tb_start_history(&data);
         tb_start_new_edit(&data);
 
@@ -1218,6 +1220,36 @@ void
 buffer_goto_line(int i)
 {
         tb_seek_line(&data, i);
+}
+
+struct value
+buffer_get_char(void)
+{
+        char b[16];
+
+        buffer_event_code ev;
+        for (;;) {
+                ev = evt_recv(read_fd);
+                if (ev == EVT_INPUT) {
+                        int n = recvint(read_fd);
+                        read(read_fd, b, n);
+                        return STRING_CLONE(b, n);
+                } else {
+                        handle_editor_event(ev);
+                }
+        }
+}
+
+bool
+buffer_find_forward(char const *s, int n)
+{
+        return tb_find_next(&data, s, n);
+}
+
+bool
+buffer_find_backward(char const *s, int n)
+{
+        return tb_find_prev(&data, s, n);
 }
 
 void

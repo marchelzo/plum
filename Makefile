@@ -68,7 +68,7 @@ repl: $(OBJECTS) repl.c
 	$(CC) $(CFLAGS) -c -o $@ -DFILENAME=$(patsubst src/%.c,%,$<) $<
 
 clean:
-	rm -rf $(BINARIES) *.gcda src/*.o src/*.gcda
+	rm -rf $(BINARIES) src/*.o
 
 .PHONY: test.c
 test.c: $(OBJECTS)

@@ -150,7 +150,10 @@ void
 buffer_cut_line(void);
 
 struct value
-buffer_get_char(int i);
+buffer_next_char(int i);
+
+struct value
+buffer_get_char(void);
 
 struct value
 buffer_get_line(int i);
@@ -271,6 +274,12 @@ buffer_source(void);
 
 void
 buffer_goto_line(int);
+
+bool
+buffer_find_forward(char const *s, int n);
+
+bool
+buffer_find_backward(char const *s, int n);
 
 void
 blog(char const *fmt, ...);

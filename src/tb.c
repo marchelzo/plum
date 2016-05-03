@@ -52,6 +52,108 @@ struct edit {
 static struct stringpos limitpos;
 static struct stringpos outpos;
 
+/*
+ * If necessary, grow the left and right buffers in s so that
+ * they are both at least n bytes.
+ */
+inline static void
+grow(struct tb *s, int n)
+{
+        if (s->capacity >= n)
+                return;
+
+        int oldcapacity = s->capacity;
+
+        while (s->capacity < n)
+                s->capacity *= 2;
+
+        resize(s->left, s->capacity);
+        resize(s->right, s->capacity);
+
+        memmove(s->right + s->capacity - s->rightcount, s->right + oldcapacity - s->rightcount, s->rightcount);
+}
+
+inline static void
+count(char const *s, int n)
+{
+        utf8_count(s, n, &outpos);
+}
+
+/*
+ * Copy text from 'str' into the text buffer. str points into a string
+ * of 'len' bytes, but the number of bytes copied into the buffer may
+ * not be exactly len. Control characters other bytes that we can't decode
+ * as UTF-8 are stripped, and \t is expanded into several spaces.
+ */
+inline static void
+insert(struct tb *s, char const *str, int len)
+{
+        uint32_t cp;
+        int bytes;
+        int width;
+
+        enum { TabWidth = 8 };
+
+        while (len != 0) switch (str[0]) {
+        case '\n':
+                str += 1;
+                len -= 1;
+
+                s->lines += 1;
+                s->line += 1;
+                s->column = 0;
+                s->characters += 1;
+                s->character += 1;
+                s->left[s->leftcount++] = '\n';
+
+                continue;
+        case '\t':
+                str += 1;
+                len -= 1;
+
+                width = TabWidth - (s->column % TabWidth);
+                grow(s, s->leftcount + s->rightcount + width);
+
+                s->characters += width;
+                s->character += width;
+                s->column += width;
+
+                while (width --> 0)
+                        s->left[s->leftcount++] = ' ';
+
+                continue;
+        default:
+                bytes = next_utf8(str, len, &cp);
+                if (bytes == -1) {
+                        str += 1;
+                        len -= 1;
+                        continue;
+                }
+
+                /* Skip C0 or C1 controls */
+                if (cp < 0x20 || (cp >= 0x80 && cp < 0xa0))
+                        goto Skip;
+
+                width = mk_wcwidth(cp);
+                if (width == -1)
+                        goto Skip;
+
+                s->column += width;
+                if (width > 0) {
+                        s->characters += 1;
+                        s->character += 1;
+                }
+
+                memcpy(s->left + s->leftcount, str, bytes);
+                s->leftcount += bytes;
+Skip:
+                str += bytes;
+                len -= bytes;
+
+                continue;
+        }
+}
+
 inline static void
 stringcount(char const *s, int byte_lim, int col_lim, int grapheme_lim, int line_lim)
 {
@@ -154,25 +256,6 @@ seekendline(struct tb *s)
         memcpy(s->left + s->leftcount, r, outpos.bytes);
         s->leftcount += outpos.bytes;
         s->rightcount -= outpos.bytes;
-}
-
-inline static void
-grow(struct tb *s, int n)
-{
-        if (s->capacity >= n) {
-                return;
-        }
-
-        int oldcapacity = s->capacity;
-
-        while (s->capacity < n) {
-                s->capacity *= 2;
-        }
-
-        resize(s->left, s->capacity);
-        resize(s->right, s->capacity);
-
-        memmove(s->right + s->capacity - s->rightcount, s->right + oldcapacity - s->rightcount, s->rightcount);
 }
 
 inline static void
@@ -409,33 +492,30 @@ removen(struct tb *s, int n, bool should_record)
 inline static void
 pushn(struct tb *s, char const *data, int n, bool should_record)
 {
-        stringcount(data, n, -1, -1, -1);
-
         grow(s, s->leftcount + s->rightcount + n);
-        memcpy(s->left + s->leftcount, data, n);
 
-        s->leftcount += outpos.bytes;
-
-        s->line += outpos.lines;
-        s->lines += outpos.lines;
-
-        s->characters += outpos.graphemes;
+        int lc = s->leftcount;
+        int c = s->character;
+        insert(s, data, n);
 
         /* Update markers and history before changing s->character */
         for (int i = 0; i < s->markers.count; ++i) {
                 int *m = s->markers.items[i];
-                if (*m > s->character)
-                        *m += outpos.graphemes;
+                if (*m > c)
+                        *m += (s->character - c);
         }
         
         if (should_record) {
-                record(s, CHANGE_INSERTION, data, n, outpos.graphemes, s->character);
+                record(
+                        s,
+                        CHANGE_INSERTION,
+                        s->left + lc,
+                        s->leftcount - lc,
+                        s->character - c,
+                        c
+                );
                 s->changed = true;
         }
-
-        s->character += outpos.graphemes;
-
-        s->column = outpos.column + ((outpos.lines >= 1) ? 0 : s->column);
 }
 
 
@@ -587,7 +667,8 @@ void
 tb_append(struct tb *s, char const *data, int n)
 {
         grow(s, s->leftcount + s->rightcount + n);
-        stringcount(data, n, -1, -1, -1);
+        insert(s, data, n);
+        count(data, n);
 
         char *r = RIGHT(s);
         memmove(r - n, r, s->rightcount);
@@ -614,7 +695,7 @@ void
 tb_append_line(struct tb *s, char const *data, int n)
 {
         grow(s, s->leftcount + s->rightcount + n + 1);
-        stringcount(data, n, -1, -1, -1);
+        count(data, n);
 
         char *r = RIGHT(s);
         memmove(r - n - 1, r, s->rightcount);
@@ -638,9 +719,8 @@ tb_read(struct tb *s, int fd)
         static char buf[4096];
 
         int n;
-        while (n = read(fd, buf, sizeof buf), n > 0) {
+        while (n = read(fd, buf, sizeof buf), n > 0)
                 pushn(s, buf, n, s->record_history);
-        }
 
         return (n == 0) ? 0 : -1;
 }
@@ -777,7 +857,7 @@ tb_up(struct tb *s, int n)
                 --p;
 
         char *r = RIGHT(s);
-        stringcount(p, s->left + s->leftcount - p, -1, -1, -1);
+        count(p, s->left + s->leftcount - p);
         memcpy(r - outpos.bytes, p, outpos.bytes);
 
         s->column = 0;
@@ -844,8 +924,7 @@ tb_left(struct tb *s, int n)
         while (l > s->left && l[-1] != '\n')
                 --l, ++back;
 
-        stringcount(l, back, -1, -1, -1);
-        int ch = outpos.graphemes;
+        int ch = utf8_charcount(l, back);
 
         stringcount(l, s->leftcount, -1, max(ch - n, 0), -1);
         int move = ch - outpos.graphemes;
@@ -870,13 +949,13 @@ tb_start_of_line(struct tb *s)
         while (l > s->left && l[-1] != '\n')
                 --l, ++back;
 
-        stringcount(l, back, -1, -1, -1);
+        int chars = utf8_charcount(l, back);
 
         memcpy(RIGHT(s) - back, s->left + s->leftcount - back, back);
         s->leftcount -= back;
         s->rightcount += back;
         s->column = 0;
-        s->character -= outpos.graphemes;
+        s->character -= chars;
 
         s->highcol = 0;
 }
@@ -889,7 +968,7 @@ tb_end_of_line(struct tb *s)
         while (i < s->rightcount && r[i] != '\n')
                 ++i;
 
-        stringcount(r, i, -1, -1, -1);
+        count(r, i);
 
         memcpy(s->left + s->leftcount, r, i);
         s->leftcount += outpos.bytes;
@@ -918,7 +997,8 @@ tb_backward(struct tb *s, int n)
         while (p > s->left && p[-1] != '\n')
                 --p, ++back;
 
-        stringcount(p, back, -1, -1, -1);
+        /* TODO: just count newlines */
+        count(p, back);
         int maxlines = outpos.lines;
 
         stringcount(p, back, -1, outpos.graphemes - move, -1);
@@ -1050,7 +1130,7 @@ tb_find_next(struct tb *s, char const *c, int n)
         if (s->rightcount == 0 || r[0] == '\n')
                 return false;
 
-        for (char const *rp = utf8_next_char(r, s->rightcount); rp != end; ++rp) {
+        for (char const *rp = utf8_next_char(r, s->rightcount); *rp != '\n' && rp != end; ++rp) {
                 if (end - rp >= n && strncmp(rp, c, n) == 0) {
                         seekforward(s, rp - r);
                         s->highcol = s->column;
@@ -1167,7 +1247,7 @@ tb_get_line(struct tb const *s, int i)
 
         if (i < s->line) {
                 p = s->left;
-        } else if (i > s->line) {
+        } else {
                 i -= s->line;
                 p = RIGHT(s);
         }
@@ -1312,7 +1392,7 @@ tb_next_match_regex(struct tb *s, pcre *re, pcre_extra *extra)
                 return false;
 
         /* there was a match. move to it. */
-        stringcount(r, out[0], -1, -1, -1);
+        count(r, out[0]);
 
         memcpy(s->left + s->leftcount, r, outpos.bytes);
         s->character += outpos.graphemes;
@@ -1338,7 +1418,7 @@ tb_next_match_string(struct tb *s, char const *p, int bytes)
         int n = m - r;
 
         /* there was a match. move to it. */
-        stringcount(r, n, -1, -1, -1);
+        count(r, n);
 
         memcpy(s->left + s->leftcount, r, outpos.bytes);
         s->character += outpos.graphemes;
