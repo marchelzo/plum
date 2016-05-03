@@ -4,7 +4,7 @@ import editor
 import plum::command as command
 
 function clangfmt() {
-        let p = proc::spawn('clang-format', ['-style={BasedOnStyle: llvm, IndentWidth: 8}'], buffer::insert, nil);
+        let p = proc::spawn('clang-format', ['-style={BasedOnStyle: google, IndentWidth: 8}'], buffer::insert, nil);
         buffer::writeProcess(p);
         proc::close(p);
         buffer::clear();
@@ -95,12 +95,6 @@ function bang(arg) {
         proc::wait(p);
 }
 
-function load(file) {
-        let p = proc::spawn('expand', [file], buffer::insert, nil);
-        proc::wait(p);
-        buffer::gotoStart();
-}
-
 function save(f) {
         if (f == '')
                 buffer::writeFile();
@@ -111,8 +105,7 @@ function save(f) {
 let commands = {
         'w': save,
         '!': bang,
-        '/': buffer::findNext,
-        'load': load,
+        '/': r -> buffer::findNext(regex(r)),
         'e': buffer::editFile,
         'shell': shell,
         'pstd': pstd,

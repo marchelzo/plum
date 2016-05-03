@@ -34,6 +34,8 @@ function delCurrent() {
         buffer::startOfLine();
 }
 
+buffer::mapNormal(['3'], () -> buffer::gotoLine(3));
+
 buffer::mapInsert(['Enter'], function () {
         let line = buffer::getLine();
         let currentIndent = line.chars().takeWhile!(|# == ' '|).len();
@@ -97,7 +99,7 @@ buffer::mapNormal(['G'], function () { buffer::gotoEnd(); buffer::startOfLine();
 
 buffer::mapNormal(['I'], function () {
         buffer::startOfLine();
-        while (buffer::getChar() == ' ')
+        while (buffer::nextChar() == ' ')
                 buffer::moveRight(1);
         buffer::insertMode();
 });
@@ -129,7 +131,7 @@ buffer::mapNormal(['$'], function () {
 });
 
 buffer::mapNormal(['x'], function () {
-        if (buffer::getChar() != "\n")
+        if (buffer::nextChar() != "\n")
                 buffer::remove(1);
 });
 
@@ -165,19 +167,37 @@ buffer::mapNormal(['w'], function () {
         }
 });
 
+buffer::mapNormal(['f'], function () {
+        buffer::findForward(buffer::getChar());
+});
+
+buffer::mapNormal(['F'], function () {
+        buffer::findBackward(buffer::getChar());
+});
+
+buffer::mapNormal(['t'], function () {
+    if (buffer::findForward(buffer::getChar()))
+        buffer::moveLeft(1);
+});
+
+buffer::mapNormal(['T'], function () {
+    if (buffer::findBackward(buffer::getChar()))
+        buffer::moveRight(1);
+});
+
 buffer::mapNormal(['b'], function () {
         buffer::moveLeft();
 
         let n = 0;
-        while (buffer::getChar() != ' ' && buffer::moveLeft() == 1)
+        while (buffer::nextChar() != ' ' && buffer::moveLeft() == 1)
                 ++n;
 
         if (n <= 1) {
-                while (buffer::getChar() == ' ' && buffer::moveLeft() == 1);
-                while (buffer::getChar() != ' ' && buffer::moveLeft() == 1);
+                while (buffer::nextChar() == ' ' && buffer::moveLeft() == 1);
+                while (buffer::nextChar() != ' ' && buffer::moveLeft() == 1);
         }
 
-        if (buffer::getChar() == ' ' && buffer::column() != 0)
+        if (buffer::nextChar() == ' ' && buffer::column() != 0)
                 buffer::moveRight();
 });
 
@@ -205,7 +225,7 @@ buffer::mapNormal(['C-r'], buffer::redo);
 buffer::mapNormal(['z', 'z'], buffer::centerCurrentLine);
 buffer::mapNormal(['d', 'G'], buffer::clearToEnd);
 buffer::mapNormal(['d', 'g', 'g'], buffer::clearToStart);
-buffer::mapNormal(['s'], function () { if (buffer::getChar() != "\n") buffer::remove(1); buffer::insertMode(); });
+buffer::mapNormal(['s'], function () { if (buffer::nextChar() != "\n") buffer::remove(1); buffer::insertMode(); });
 buffer::mapNormal(['D'], buffer::cutLine);
 
 buffer::mapNormal(['F12'], editor::showConsole);
