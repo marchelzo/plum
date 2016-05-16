@@ -10,6 +10,7 @@
 #include "buffer.h"
 #include "log.h"
 #include "util.h"
+#include "json.h"
 
 static char buffer[1024];
 
@@ -273,6 +274,18 @@ builtin_getenv(value_vector *args)
                 return NIL;
         else
                 return STRING_NOGC(val, strlen(val));
+}
+
+struct value
+builtin_json_parse(value_vector *args)
+{
+        ASSERT_ARGC("json::parse()", 1);
+
+        struct value json = args->items[0];
+        if (json.type != VALUE_STRING)
+                vm_panic("non-string passed to json::parse()");
+
+        return json_parse(json.string, json.bytes);
 }
 
 struct value

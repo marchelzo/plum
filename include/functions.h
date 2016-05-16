@@ -34,6 +34,9 @@ struct value
 builtin_getenv(value_vector *args);
 
 struct value
+builtin_json_parse(value_vector *args);
+
+struct value
 builtin_editor_insert(value_vector *args);
 
 struct value
